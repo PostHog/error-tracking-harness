@@ -13,6 +13,10 @@ COPY fixtures/rollup-4/package.json fixtures/rollup-4/pnpm-workspace.yaml fixtur
 COPY fixtures/vite-8/package.json fixtures/vite-8/pnpm-workspace.yaml fixtures/vite-8/pnpm-lock.yaml fixtures/vite-8/
 COPY fixtures/cli-rollup-4/package.json fixtures/cli-rollup-4/pnpm-workspace.yaml fixtures/cli-rollup-4/pnpm-lock.yaml fixtures/cli-rollup-4/
 COPY fixtures/vite-8-isolated/package.json fixtures/vite-8-isolated/pnpm-workspace.yaml fixtures/vite-8-isolated/pnpm-lock.yaml fixtures/vite-8-isolated/
+COPY fixtures/next-14/package.json fixtures/next-14/pnpm-workspace.yaml fixtures/next-14/pnpm-lock.yaml fixtures/next-14/
+COPY fixtures/next-15/package.json fixtures/next-15/pnpm-workspace.yaml fixtures/next-15/pnpm-lock.yaml fixtures/next-15/
+COPY fixtures/next-16-webpack/package.json fixtures/next-16-webpack/pnpm-workspace.yaml fixtures/next-16-webpack/pnpm-lock.yaml fixtures/next-16-webpack/
+COPY fixtures/next-16-turbopack/package.json fixtures/next-16-turbopack/pnpm-workspace.yaml fixtures/next-16-turbopack/pnpm-lock.yaml fixtures/next-16-turbopack/
 # Build scripts run only where a fixture's pnpm-workspace.yaml allows them: @posthog/cli's
 # postinstall, which downloads the binary the plugins resolve when given no path.
 RUN for fixture in fixtures/*/; do (cd "$fixture" && pnpm install --frozen-lockfile); done \

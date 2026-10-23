@@ -1,0 +1,29 @@
+{
+    "mode": "next",
+    "description": "bulk_start_upload fails. On the webpack path the inner webpack plugin is fail-soft: build green, maps deleted, exceptions unresolved. On the Turbopack path the upload runs in runAfterProductionCompile and fails the build, leaving the maps Next wrote. Before @posthog/nextjs-config 1.11.6 (webpack-plugin 1.7.4 inside) the webpack path kept the hidden maps.",
+    "options": {
+        "sourcemaps": {
+            "releaseMode": "event",
+            "deleteAfterUpload": true
+        }
+    },
+    "fault": {
+        "api": "bulk_start_upload",
+        "status": 500
+    },
+    "expect": {
+        "build": {
+            "@posthog/nextjs-config": "green",
+            "@posthog/nextjs-config:turbopack": "fails"
+        },
+        "maps": {
+            "@posthog/nextjs-config": "deleted",
+            "@posthog/nextjs-config:turbopack": "kept-visible"
+        },
+        "symbols": "none",
+        "events": "unresolved"
+    },
+    "minPlugin": {
+        "@posthog/nextjs-config": "1.11.6"
+    }
+}

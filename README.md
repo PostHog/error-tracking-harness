@@ -79,6 +79,13 @@ const posthogOptions = JSON.parse(process.env.POSTHOG_HARNESS_OPTIONS)
 A fixture with `"subject": false` (the pnpm-isolated layout, where the plugin's dependencies live
 under `.pnpm` and a tarball overlay cannot reach them) is skipped under `--plugins subject`.
 
+A fixture with `"mode": "next"` is a Next.js project (`fixtures/NEXT.md`): its `runtime` is an HTTP
+server the harness starts and requests, `distGlobs`/`distIgnore` pick the files under `.next` to
+judge, `volatileChunks` names the runtime chunks whose bytes change per release by design,
+`optionalIds` names files the bundler may emit without a map, and `cliSelection: edges` runs it
+against the oldest and newest CLI only. Files the CLI itself logged as skipped are exempt from the
+id and symbol-set invariants.
+
 A fixture with `"mode": "cli"` has no plugin: it builds plain output with source maps and the
 harness runs `posthog-cli sourcemap process | inject | upload` on it afterwards, the way a user
 without a bundler plugin does (and the way `@posthog/nuxt` and Turbopack builds do). Cases carry

@@ -1,21 +1,28 @@
 // Turns what a build and its runtime left behind into evidence.json: plain data the judge reads.
 // Every lookup that needs a source map happens here, so the judge needs none.
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs'
 import path from 'node:path'
 import { originalPosition } from './symbol-data.mjs'
 
 // The plugins are fail-soft: a failed upload leaves the build green, so the log is evidence too.
 const PLUGIN_ERROR = /Error injecting PostHog|Error running PostHog|release resolve failed|Command failed with code|ERROR posthog_cli|panicked|\[posthog-rollup-plugin\] .*(?:failed|error)/i
 
-// What posthog-cli reads chunk ids from: a `//# chunkId=` comment at the start of a line.
-const CHUNK_ID_COMMENT = /(?:^|\n)\/\/# chunkId=(\S{1,128})/
+// What posthog-cli reads chunk ids from: a `//# chunkId=` comment at the start of a line, or the
+// `//# debugId=` comment a bundler with native debug ids writes (Turbopack, webpack >= 5.104).
+const CHUNK_ID_COMMENT = /(?:^|\n)\/\/# (?:chunkId|debugId)=(\S{1,128})/
 const SOURCE_MAPPING_URL = /^[ \t]*\/\/# sourceMappingURL=/m
 
-export function listDist(dist) {
+const DEFAULT_GLOBS = ['**/*.js', '**/*.mjs', '**/*.cjs', '**/*.map']
+
+/** The built files a fixture wants judged: `distGlobs` and `distIgnore` from fixture.json, or every script and map. */
+export function listDist(dist, fixture = {}) {
     if (!existsSync(dist)) return []
+    const globs = fixture.distGlobs ?? DEFAULT_GLOBS
+    const ignore = fixture.distIgnore ?? []
     return readdirSync(dist, { recursive: true })
         .map(String)
-        .filter((file) => /\.([mc]?js|map)$/.test(file))
+        .map((file) => file.split(path.sep).join('/'))
+        .filter((file) => globs.some((glob) => path.matchesGlob(file, glob)) && !ignore.some((glob) => path.matchesGlob(file, glob)))
         .sort()
 }
 
@@ -53,10 +60,27 @@ function storedMatchesDisk(stored, disk, releaseIds, releaseId) {
     return 'differs'
 }
 
-export function collectDist(work, dist) {
+// posthog-cli logs every source pair it leaves out ("Skipping <path>: <reason>" at debug level):
+// stubs with empty maps, files without an id, oversized chunks. Those files are evidence of the
+// CLI's choice, not a failure of injection, so the judge exempts them from the id and symbol-set
+// invariants while the events still have to resolve.
+export function cliSkips(log, work) {
+    const skipped = new Map()
+    // The CLI prints real paths; the workspace may be reached through a symlink (/var on macOS).
+    const roots = [...new Set([work, realpathSync(work)])]
+    for (const match of (log ?? '').matchAll(/Skipping (\/\S+?\.(?:[mc]?js)(?:\.map)?)(?::| because| -) ?([^\n]*)/g)) {
+        const absolute = match[1].replace(/\.map$/, '')
+        const root = roots.find((candidate) => absolute.startsWith(candidate + path.sep))
+        if (root) skipped.set(path.relative(root, absolute), match[2].trim().slice(0, 160))
+    }
+    return skipped
+}
+
+export function collectDist(work, dist, fixture, log) {
     const chunks = []
     const mapsLeft = []
-    for (const file of listDist(dist)) {
+    const skipped = cliSkips(log, work)
+    for (const file of listDist(dist, fixture)) {
         if (file.endsWith('.map')) {
             mapsLeft.push(file)
             continue
@@ -70,6 +94,7 @@ export function collectDist(work, dist) {
             code,
             chunkId: CHUNK_ID_COMMENT.exec(code)?.[1] ?? null,
             sourceMappingURL: SOURCE_MAPPING_URL.test(code),
+            cliSkipped: skipped.get(path.relative(work, absolute)) ?? null,
         })
     }
     return { chunks, mapsLeft }

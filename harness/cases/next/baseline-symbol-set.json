@@ -1,0 +1,15 @@
+{
+    "mode": "next",
+    "description": "One production build in symbol-set mode: symbol sets bound to the release, no release on the exceptions.",
+    "options": {
+        "sourcemaps": {
+            "releaseMode": "symbol-set"
+        }
+    },
+    "expect": {
+        "maps": {
+            "@posthog/nextjs-config": "deleted",
+            "@posthog/nextjs-config:turbopack": "deleted"
+        }
+    }
+}

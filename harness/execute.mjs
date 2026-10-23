@@ -2,6 +2,7 @@
 // run the bundle, and collect evidence. Nothing here decides pass or fail; see judge.mjs.
 import { execFileSync, spawn } from 'node:child_process'
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs'
+import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createMockServer } from './mock-server.mjs'
@@ -79,7 +80,7 @@ function createRepository(work, git) {
 // bundler plugin does. `cli.command` is process | inject-upload | upload, `cli.input` is directory
 // (the default) or stdin (the file list the plugins pipe in). The environment is what the plugins
 // set (plugin-utils' buildCliEnv) and the flags are the ones they pass.
-async function runCliSteps({ cli, kase, options, work, dist, host, output, tag }) {
+async function runCliSteps({ cli, kase, options, work, dist, host, output, tag, fixture }) {
     const config = kase.cli ?? {}
     const sourcemaps = options.sourcemaps ?? {}
     const releaseFlags = []
@@ -88,7 +89,7 @@ async function runCliSteps({ cli, kase, options, work, dist, host, output, tag }
     const mode = sourcemaps.releaseMode ?? 'event'
     const modeFlags = mode === 'event' ? ['--release-mode', 'event'] : []
     const deleteFlags = sourcemaps.deleteAfterUpload === false ? [] : ['--delete-after']
-    const files = listDist(dist).filter((file) => !file.endsWith('.map')).map((file) => path.join(dist, file))
+    const files = listDist(dist, fixture).filter((file) => !file.endsWith('.map')).map((file) => path.join(dist, file))
     const target = config.input === 'stdin' ? ['--stdin'] : ['--directory', dist]
     const input = config.input === 'stdin' ? files.join('\n') + '\n' : undefined
     const env = sandboxEnv(work, {
@@ -116,6 +117,75 @@ async function runCliSteps({ cli, kase, options, work, dist, host, output, tag }
     return steps
 }
 
+async function availablePort() {
+    const server = createServer()
+    await new Promise((resolve, reject) => {
+        server.once('error', reject)
+        server.listen(0, '127.0.0.1', resolve)
+    })
+    const port = server.address().port
+    await new Promise((resolve) => server.close(resolve))
+    return port
+}
+
+function killGroup(child, signal) {
+    if (!child.pid) return
+    try {
+        process.kill(-child.pid, signal)
+    } catch (error) {
+        if (error.code !== 'ESRCH') throw error
+    }
+}
+
+// An HTTP runtime (`runtime: { kind: 'http', start, paths }`): start the built server from the
+// fixture's node_modules/.bin, wait for it to answer, request each path so the server captures
+// its exceptions, then stop the whole process group (frameworks fork workers).
+async function runHttp({ fixture, work, env, log }) {
+    const port = await availablePort()
+    const origin = `http://127.0.0.1:${port}`
+    const child = spawn('sh', ['-c', `${fixture.runtime.start} -p ${port} -H 127.0.0.1`], {
+        cwd: work,
+        env,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        detached: true,
+    })
+    let output = ''
+    child.stdout.on('data', (data) => (output += data))
+    child.stderr.on('data', (data) => (output += data))
+    const exited = new Promise((resolve) => child.once('close', (code, signal) => resolve({ code, signal })))
+    const requests = []
+    try {
+        const deadline = Date.now() + 90_000
+        let ready = false
+        while (Date.now() < deadline && !ready) {
+            if (child.exitCode !== null) break
+            try {
+                ready = (await fetch(origin, { signal: AbortSignal.timeout(2000) })).ok
+            } catch {
+                await new Promise((resolve) => setTimeout(resolve, 250))
+            }
+        }
+        if (!ready) return { code: -1, output: `server did not become ready\n${output}`, requests }
+        for (const route of fixture.runtime.paths) {
+            try {
+                const response = await fetch(origin + route, { signal: AbortSignal.timeout(30_000) })
+                requests.push({ path: route, status: response.status, body: (await response.text()).slice(0, 2000) })
+            } catch (error) {
+                requests.push({ path: route, status: null, error: error.message })
+            }
+        }
+        // The SDK flushes on shutdown inside the handler; give the capture a moment to land.
+        await new Promise((resolve) => setTimeout(resolve, 1500))
+        return { code: requests.every((request) => request.status === 200) ? 0 : 1, output, requests }
+    } finally {
+        killGroup(child, 'SIGTERM')
+        const timer = setTimeout(() => killGroup(child, 'SIGKILL'), 5000)
+        await exited
+        clearTimeout(timer)
+        if (log) writeFileSync(log, output + '\n' + JSON.stringify(requests, null, 2) + '\n')
+    }
+}
+
 // Case options override the defaults; a null deletes the key so a case can leave out a default.
 function mergeOptions(base, patch) {
     const merged = { ...base }
@@ -137,7 +207,7 @@ export async function executeCase({ cli, fixture, kase, selection, subject, outp
     const host = await mock.start()
     const evidence = {
         cli,
-        fixture: { name: fixture.name, bundler: fixture.bundler, version: fixture.version },
+        fixture: { name: fixture.name, bundler: fixture.bundler, version: fixture.version, volatileChunks: fixture.volatileChunks ?? [], optionalIds: fixture.optionalIds ?? [] },
         plugin: null,
         case: kase.name,
         selection,
@@ -151,7 +221,8 @@ export async function executeCase({ cli, fixture, kase, selection, subject, outp
         if (kase.git) evidence.git = createRepository(work, kase.git)
         evidence.plugin = prepareNodeModules({ fixtureDir: fixture.dir, fixture, work, selection, subject })
         evidence.throws = expectedThrows(work, fixture)
-        const dist = path.join(work, path.dirname(fixture.entry))
+        const dist = path.join(work, fixture.dist ?? path.dirname(fixture.entry))
+        const binPath = `${path.join(work, 'node_modules/.bin')}${path.delimiter}${process.env.PATH}`
         const releaseIds = []
         const releaseCount = kase.releases ?? 1
 
@@ -182,7 +253,8 @@ export async function executeCase({ cli, fixture, kase, selection, subject, outp
                 cwd: work,
                 log: path.join(output, `${tag}-build.log`),
                 env: sandboxEnv(work, {
-                    PATH: `${path.join(work, 'node_modules/.bin')}${path.delimiter}${process.env.PATH}`,
+                    PATH: binPath,
+                    NEXT_TELEMETRY_DISABLED: '1',
                     POSTHOG_HARNESS_OPTIONS: JSON.stringify(options),
                     ...(kase.env ?? {}),
                 }),
@@ -191,10 +263,14 @@ export async function executeCase({ cli, fixture, kase, selection, subject, outp
             let cliSteps = null
             let pristine = null
             if (fixture.mode === 'cli' && build.code === 0) {
-                pristine = Object.fromEntries(listDist(dist).map((file) => [file, readFileSync(path.join(dist, file), 'utf8')]))
-                cliSteps = await runCliSteps({ cli, kase, options, work, dist, host, output, tag })
+                pristine = Object.fromEntries(listDist(dist, fixture).map((file) => [file, readFileSync(path.join(dist, file), 'utf8')]))
+                cliSteps = await runCliSteps({ cli, kase, options, work, dist, host, output, tag, fixture })
             }
-            if (existsSync(dist)) cpSync(dist, path.join(output, `${tag}-dist`), { recursive: true })
+            // Keep the judged files, not the whole output directory (a framework's cache is huge).
+            for (const file of listDist(dist, fixture)) {
+                mkdirSync(path.dirname(path.join(output, `${tag}-dist`, file)), { recursive: true })
+                cpSync(path.join(dist, file), path.join(output, `${tag}-dist`, file))
+            }
 
             const state = api.snapshot()
             // With no name and version from the plugin, the release is whatever the CLI derived.
@@ -203,23 +279,33 @@ export async function executeCase({ cli, fixture, kase, selection, subject, outp
                 ? (state.releases.find((row) => row.project === RELEASE_NAME && row.version === releaseVersion) ?? null)
                 : (state.releases.at(-1) ?? null)
             if (release) releaseIds.push(release.id)
-            const { chunks, mapsLeft } = collectDist(work, dist)
-            const entry = path.join(work, fixture.entry)
+            const cliLog = (cliSteps ?? []).length ? readFileSync(path.join(output, `${tag}-cli-${cliSteps.length}-${cliSteps.at(-1).args[1]}.log`), 'utf8') : ''
+            const { chunks, mapsLeft } = collectDist(work, dist, fixture, build.output + '\n' + cliLog)
             let runtime = null
             let events = null
-            if (build.code === 0 && existsSync(entry)) {
-                runtime = await run(process.execPath, [entry], {
-                    cwd: work,
-                    log: path.join(output, `${tag}-runtime.log`),
-                    env: sandboxEnv(work, { POSTHOG_HARNESS_HOST: host }),
+            if (build.code === 0) {
+                // A framework server reads its config again at start, so the options stay in scope.
+                const runtimeEnv = sandboxEnv(work, {
+                    PATH: binPath,
+                    POSTHOG_HARNESS_HOST: host,
+                    POSTHOG_HARNESS_OPTIONS: JSON.stringify(options),
+                    NEXT_TELEMETRY_DISABLED: '1',
                 })
-                events = collectEvents({ events: mock.inspect().events, chunks, api: state, work, throws: evidence.throws })
+                const log = path.join(output, `${tag}-runtime.log`)
+                if (fixture.runtime?.kind === 'http') {
+                    runtime = await runHttp({ fixture, work, env: runtimeEnv, log })
+                } else if (existsSync(path.join(work, fixture.entry))) {
+                    runtime = await run(process.execPath, [path.join(work, fixture.entry)], { cwd: work, log, env: runtimeEnv })
+                }
+                if (runtime) events = collectEvents({ events: mock.inspect().events, chunks, api: state, work, throws: evidence.throws })
             }
             // Keep the server's copy of any chunk that no longer matches disk, for diagnosis.
             for (const set of state.symbolSets) {
                 const chunk = chunks.find((candidate) => candidate.chunkId === set.chunk_id)
                 if (chunk && set.upload && set.upload.minifiedSource !== chunk.code) {
-                    writeFileSync(path.join(output, `${tag}-stored-${chunk.file}`), set.upload.minifiedSource)
+                    const stored = path.join(output, `${tag}-stored`, chunk.file)
+                    mkdirSync(path.dirname(stored), { recursive: true })
+                    writeFileSync(stored, set.upload.minifiedSource)
                 }
             }
             const uploaded = state.calls
@@ -237,7 +323,7 @@ export async function executeCase({ cli, fixture, kase, selection, subject, outp
                 symbolSets: collectSymbolSets(chunks, state, releaseIds.slice(0, -1), release?.id),
                 apiCalls: state.calls.map((call) => ({ action: call.action, status: call.status })),
                 uploadedChunkIds: uploaded,
-                runtime: runtime && { code: runtime.code, signal: runtime.signal },
+                runtime: runtime && { code: runtime.code, signal: runtime.signal ?? null, requests: runtime.requests ?? null },
                 events,
                 mockErrors: [...state.errors, ...mock.inspect().errors],
             })

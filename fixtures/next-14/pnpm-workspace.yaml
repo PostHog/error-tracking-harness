@@ -1,0 +1,8 @@
+minimumReleaseAge: 10080
+nodeLinker: hoisted
+# The CLI package downloads its binary in postinstall. core-js only prints a banner, but pnpm 11
+# still refuses the install on Next 14 when it is denied, so the strict check is off here.
+allowBuilds:
+    "@posthog/cli": true
+    core-js: false
+strictDepBuilds: false

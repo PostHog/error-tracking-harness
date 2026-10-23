@@ -1,0 +1,1 @@
+`next build --webpack` on Next 16. `@posthog/nextjs-config` below 1.11.4 detects the flag as Turbopack and uploads without injecting chunk ids (posthog-js#5333), so this fixture needs 1.11.4 or newer.
