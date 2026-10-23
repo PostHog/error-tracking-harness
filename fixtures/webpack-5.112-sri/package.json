@@ -1,0 +1,16 @@
+{
+    "name": "harness-webpack-5-112-sri",
+    "private": true,
+    "packageManager": "pnpm@11.7.0",
+    "scripts": {
+        "build": "webpack"
+    },
+    "devDependencies": {
+        "@posthog/webpack-plugin": "1.7.1",
+        "posthog-webpack-plugin-floor": "npm:@posthog/webpack-plugin@1.7.0",
+        "html-webpack-plugin": "5.6.8",
+        "webpack": "5.112.0",
+        "webpack-cli": "6.0.1",
+        "webpack-subresource-integrity": "5.1.0"
+    }
+}

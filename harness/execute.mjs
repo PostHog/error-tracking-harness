@@ -8,7 +8,7 @@ import path from 'node:path'
 import { createMockServer } from './mock-server.mjs'
 import { createErrorTrackingApi } from './mock-api.mjs'
 import { prepareNodeModules } from './subject.mjs'
-import { collectDist, collectEvents, collectInjection, collectSymbolSets, expectedThrows, listDist } from './collect.mjs'
+import { collectDist, collectEvents, collectInjection, collectIntegrity, collectSymbolSets, expectedThrows, listDist } from './collect.mjs'
 
 const API_KEY = 'phx_harness_personal_key'
 const PROJECT_ID = '4242'
@@ -213,7 +213,14 @@ export async function executeCase({ cli, fixture, kase, selection, subject, outp
     const host = await mock.start()
     const evidence = {
         cli,
-        fixture: { name: fixture.name, bundler: fixture.bundler, version: fixture.version, volatileChunks: fixture.volatileChunks ?? [], optionalIds: fixture.optionalIds ?? [] },
+        fixture: {
+            name: fixture.name,
+            bundler: fixture.bundler,
+            version: fixture.version,
+            runtime: fixture.runtime?.kind ?? (fixture.runtime ?? 'node'),
+            volatileChunks: fixture.volatileChunks ?? [],
+            optionalIds: fixture.optionalIds ?? [],
+        },
         plugin: null,
         case: kase.name,
         selection,
@@ -298,7 +305,9 @@ export async function executeCase({ cli, fixture, kase, selection, subject, outp
                     NEXT_TELEMETRY_DISABLED: '1',
                 })
                 const log = path.join(output, `${tag}-runtime.log`)
-                if (fixture.runtime?.kind === 'http') {
+                if (fixture.runtime?.kind === 'none') {
+                    runtime = null
+                } else if (fixture.runtime?.kind === 'http') {
                     runtime = await runHttp({ fixture, work, env: runtimeEnv, log })
                 } else if (existsSync(path.join(work, fixture.entry))) {
                     runtime = await run(process.execPath, [path.join(work, fixture.entry)], { cwd: work, log, env: runtimeEnv })
@@ -324,6 +333,7 @@ export async function executeCase({ cli, fixture, kase, selection, subject, outp
                 build: { code: build.code, signal: build.signal, pluginError: PLUGIN_ERROR.test(build.output) },
                 cli: cliSteps,
                 injection: pristine && collectInjection(pristine, chunks),
+                integrity: collectIntegrity(work, fixture),
                 chunks: chunks.map(({ code, absolute, ...chunk }) => chunk),
                 mapsLeft,
                 symbolSets: collectSymbolSets(chunks, state, releaseIds.slice(0, -1), release?.id),
