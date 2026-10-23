@@ -17,6 +17,15 @@ COPY fixtures/vite-8-isolated/package.json fixtures/vite-8-isolated/pnpm-workspa
 # postinstall, which downloads the binary the plugins resolve when given no path.
 RUN for fixture in fixtures/*/; do (cd "$fixture" && pnpm install --frozen-lockfile); done \
     && pnpm store prune
+# pnpm runs a package's build script once and reuses the package from its store for the next
+# fixture without the files that script produced, so each fixture's shim must be checked and
+# rebuilt where the binary is missing. A fixture without @posthog/cli (cli mode) has no shim.
+RUN set -eu; for fixture in fixtures/*/; do \
+        shim=""; for candidate in node_modules/.bin/posthog-cli node_modules/.pnpm/node_modules/.bin/posthog-cli; do \
+            [ -e "$fixture$candidate" ] && shim="$candidate" && break; done; \
+        [ -n "$shim" ] || continue; \
+        (cd "$fixture" && ("$shim" --version >/dev/null 2>&1 || pnpm rebuild @posthog/cli) && "$shim" --version); \
+    done
 
 COPY cli-versions.txt .
 ARG TARGETARCH
