@@ -1,0 +1,12 @@
+{
+    "mode": "cli",
+    "description": "posthog-cli sourcemap process --directory dist --delete-after in event mode, the way a user without a bundler plugin runs it: chunk ids and the release id are injected on disk without losing a byte (posthog#122580, posthog#30957), maps are uploaded and deleted, and the sourceMappingURL comments are stripped (posthog#66165).",
+    "options": {
+        "sourcemaps": {
+            "releaseMode": "event"
+        }
+    },
+    "cli": {
+        "command": "process"
+    }
+}

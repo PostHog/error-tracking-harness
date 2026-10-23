@@ -3,7 +3,7 @@
 // the installed tree, so swapping a package means replacing one top-level entry. Fixtures use
 // pnpm's hoisted linker, which keeps every package at the top level where that swap works.
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync } from 'node:fs'
 import path from 'node:path'
 import { satisfies } from './semver.mjs'
 
@@ -31,6 +31,8 @@ function installedVersion(nodeModules, name) {
 
 /** The plugin version a selection would put in place, known before anything is built. */
 export function selectedPlugin(fixture, selection, subject) {
+    // A cli-mode fixture has no plugin; the CLI under test is the matrix's own dimension.
+    if (!fixture.plugin) return { name: 'posthog-cli', version: 'cli' }
     const installed = path.join(fixture.dir, 'node_modules')
     if (selection === 'subject') {
         const entry = subject.get(fixture.plugin)
@@ -40,6 +42,20 @@ export function selectedPlugin(fixture, selection, subject) {
     const version = installedVersion(installed, selection === 'floor' ? fixture.floorAlias : fixture.plugin)
     if (!version) throw new Error(`${fixture.name}: ${fixture.plugin} is not installed; run pnpm install in fixtures/${fixture.name}`)
     return { name: fixture.plugin, version }
+}
+
+function copyTree(source, destination) {
+    // -P keeps symlinks as symlinks (GNU cp -l would otherwise hardlink what .bin shims point at).
+    const attempts = process.platform === 'darwin' ? [['cp', ['-RPc', source, destination]]] : [['cp', ['-RPl', source, destination]]]
+    for (const [command, args] of attempts) {
+        try {
+            execFileSync(command, args, { stdio: 'pipe' })
+            return
+        } catch {
+            rmSync(destination, { recursive: true, force: true })
+        }
+    }
+    cpSync(source, destination, { recursive: true, verbatimSymlinks: true })
 }
 
 function link(target, destination) {
@@ -53,31 +69,40 @@ function link(target, destination) {
 export function prepareNodeModules({ fixtureDir, fixture, work, selection, subject }) {
     const installed = path.join(fixtureDir, 'node_modules')
     const nodeModules = path.join(work, 'node_modules')
-    mkdirSync(nodeModules)
-    for (const entry of readdirSync(installed, { withFileTypes: true })) {
-        const source = path.join(installed, entry.name)
-        if (entry.name.startsWith('@') && entry.isDirectory()) {
-            mkdirSync(path.join(nodeModules, entry.name))
-            for (const child of readdirSync(source)) {
-                link(path.join(source, child), path.join(nodeModules, entry.name, child))
+    if (fixture.nodeModules === 'copy') {
+        // Turbopack refuses packages whose real path lies outside the workspace, so symlinks
+        // into the installed tree will not do. A clone (APFS) or hardlink copy costs nothing.
+        copyTree(installed, nodeModules)
+    } else {
+        mkdirSync(nodeModules)
+        for (const entry of readdirSync(installed, { withFileTypes: true })) {
+            const source = path.join(installed, entry.name)
+            if (entry.name.startsWith('@') && entry.isDirectory()) {
+                mkdirSync(path.join(nodeModules, entry.name))
+                for (const child of readdirSync(source)) {
+                    link(path.join(source, child), path.join(nodeModules, entry.name, child))
+                }
+            } else {
+                link(source, path.join(nodeModules, entry.name))
             }
-        } else {
-            link(source, path.join(nodeModules, entry.name))
         }
     }
 
-    const pluginPath = path.join(nodeModules, fixture.plugin)
+    const pluginPath = fixture.plugin ? path.join(nodeModules, fixture.plugin) : null
     let source = 'latest'
-    if (selection === 'floor') {
-        rmSync(pluginPath)
-        link(path.join(installed, fixture.floorAlias), pluginPath)
+    if (selection === 'floor' && pluginPath) {
+        rmSync(pluginPath, { recursive: true, force: true })
+        // Inside the copied tree when there is one, so Turbopack still sees it under the root.
+        link(path.join(fixture.nodeModules === 'copy' ? nodeModules : installed, fixture.floorAlias), pluginPath)
         source = 'floor'
     } else if (selection === 'subject') {
         const overlaid = []
         for (const [name, { tarball, manifest }] of subject) {
             if (!installedVersion(installed, name)) continue // not part of this fixture
-            for (const [dependency, range] of Object.entries(manifest.dependencies ?? {})) {
+            for (const [dependency, declared] of Object.entries(manifest.dependencies ?? {})) {
                 if (UNCHECKED.has(dependency) || subject.has(dependency)) continue
+                // An alias (`name: npm:other@range`) is installed under `name` at `other`'s version.
+                const range = declared.startsWith('npm:') ? declared.slice(declared.lastIndexOf('@') + 1) : declared
                 const version = installedVersion(installed, dependency)
                 if (!version || !satisfies(version, range)) {
                     throw new Error(
@@ -91,12 +116,13 @@ export function prepareNodeModules({ fixtureDir, fixture, work, selection, subje
             execFileSync('tar', ['-xzf', tarball, '--strip-components=1', '-C', destination])
             overlaid.push(`${name}@${manifest.version}`)
         }
-        if (!overlaid.some((item) => item.startsWith(`${fixture.plugin}@`))) {
+        if (fixture.plugin && !overlaid.some((item) => item.startsWith(`${fixture.plugin}@`))) {
             throw new Error(`subject has no tarball for ${fixture.plugin}`)
         }
         source = `subject (${overlaid.join(', ')})`
     }
 
+    if (!pluginPath) return { name: 'posthog-cli', version: 'cli', source }
     const manifest = JSON.parse(readFileSync(path.join(pluginPath, 'package.json'), 'utf8'))
     return { name: manifest.name, version: manifest.version, source }
 }

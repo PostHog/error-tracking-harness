@@ -1,0 +1,19 @@
+{
+    "description": "No release name or version in the plugin options, but the build runs inside a git checkout with a remote: the CLI names the release after the repository and versions it by the commit.",
+    "options": {
+        "sourcemaps": {
+            "releaseMode": "event",
+            "releaseName": null,
+            "releaseVersion": null
+        }
+    },
+    "git": {
+        "remote": "https://github.com/posthog/harness-app.git"
+    },
+    "expect": {
+        "release": {
+            "name": "harness-app",
+            "version": "commit"
+        }
+    }
+}

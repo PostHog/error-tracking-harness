@@ -1,0 +1,15 @@
+{
+    "name": "harness-cli-rollup-4",
+    "private": true,
+    "type": "module",
+    "packageManager": "pnpm@11.7.0",
+    "scripts": {
+        "build": "rollup -c"
+    },
+    "dependencies": {
+        "posthog-node": "5.56.1"
+    },
+    "devDependencies": {
+        "rollup": "4.64.7"
+    }
+}

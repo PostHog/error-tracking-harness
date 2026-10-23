@@ -1,0 +1,10 @@
+{
+    "description": "No cliBinaryPath: the plugin must find the posthog-cli that @posthog/cli installed, through node_modules/.bin on a hoisted layout and node_modules/.pnpm/node_modules/.bin on pnpm's default isolated layout (posthog-js#2968, posthog-js#2612). The CLI that runs is the fixture's own, whatever the matrix selects.",
+    "options": {
+        "cliBinaryPath": null,
+        "sourcemaps": {
+            "releaseMode": "event"
+        }
+    },
+    "cliBinary": "fixture"
+}

@@ -1,0 +1,24 @@
+{
+    "bundler": "vite",
+    "version": "8.3.4",
+    "plugin": "@posthog/rollup-plugin",
+    "floorAlias": "posthog-rollup-plugin-floor",
+    "layout": "pnpm-isolated",
+    "subject": false,
+    "entry": "dist/main.mjs",
+    "runtime": "node",
+    "throws": {
+        "entry": {
+            "file": "src/boom.js",
+            "marker": "harness:throw:entry",
+            "type": "Error",
+            "value": "boom from entry chunk"
+        },
+        "lazy": {
+            "file": "src/lazy.js",
+            "marker": "harness:throw:lazy",
+            "type": "LazyFailure",
+            "value": "lazy chunk failed with 3 values"
+        }
+    }
+}

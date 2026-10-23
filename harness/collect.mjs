@@ -1,21 +1,29 @@
 // Turns what a build and its runtime left behind into evidence.json: plain data the judge reads.
 // Every lookup that needs a source map happens here, so the judge needs none.
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs'
 import path from 'node:path'
 import { originalPosition } from './symbol-data.mjs'
 
 // The plugins are fail-soft: a failed upload leaves the build green, so the log is evidence too.
 const PLUGIN_ERROR = /Error injecting PostHog|Error running PostHog|release resolve failed|Command failed with code|ERROR posthog_cli|panicked|\[posthog-rollup-plugin\] .*(?:failed|error)/i
 
-// What posthog-cli reads chunk ids from: a `//# chunkId=` comment at the start of a line.
-const CHUNK_ID_COMMENT = /(?:^|\n)\/\/# chunkId=(\S{1,128})/
+// What posthog-cli reads chunk ids from: a `//# chunkId=` comment at the start of a line, or the
+// `//# debugId=` comment a bundler with native debug ids writes (Turbopack, webpack >= 5.104).
+const CHUNK_ID_COMMENT = /(?:^|\n)\/\/# (?:chunkId|debugId)=(\S{1,128})/
 const SOURCE_MAPPING_URL = /^[ \t]*\/\/# sourceMappingURL=/m
 
-export function listDist(dist) {
+const DEFAULT_GLOBS = ['**/*.js', '**/*.mjs', '**/*.cjs', '**/*.map']
+
+/** The built files a fixture wants judged: `distGlobs` and `distIgnore` from fixture.json, or every script and map. */
+export function listDist(dist, fixture = {}) {
     if (!existsSync(dist)) return []
+    const globs = fixture.distGlobs ?? DEFAULT_GLOBS
+    const ignore = fixture.distIgnore ?? []
     return readdirSync(dist, { recursive: true })
         .map(String)
-        .filter((file) => /\.([mc]?js|map)$/.test(file))
+        .map((file) => file.split(path.sep).join('/'))
+        .filter((file) => globs.some((glob) => path.matchesGlob(file, glob)) && !ignore.some((glob) => path.matchesGlob(file, glob)))
         .sort()
 }
 
@@ -43,16 +51,37 @@ function sameLayout(a, b) {
  * hash, so the stored copy may differ in those tokens while every column still lines up.
  */
 function storedMatchesDisk(stored, disk, releaseIds, releaseId) {
-    const normalized = releaseIds.reduce((source, previous) => source.replaceAll(previous, releaseId ?? previous), stored)
-    if (normalized === disk) return 'exact'
-    if (sameLayout(normalized, disk)) return 'layout'
+    // The CLI uploads a chunk before --delete-after strips its sourceMappingURL line, which is
+    // last in the file, so the stored copy may carry that one extra line without moving a position.
+    const withoutMapComment = (code) => code.replace(/^\/\/# sourceMappingURL=[^\n]*\n?/gm, '')
+    const normalized = withoutMapComment(releaseIds.reduce((source, previous) => source.replaceAll(previous, releaseId ?? previous), stored))
+    const onDisk = withoutMapComment(disk)
+    if (normalized === onDisk) return 'exact'
+    if (sameLayout(normalized, onDisk)) return 'layout'
     return 'differs'
 }
 
-export function collectDist(work, dist) {
+// posthog-cli logs every source pair it leaves out ("Skipping <path>: <reason>" at debug level):
+// stubs with empty maps, files without an id, oversized chunks. Those files are evidence of the
+// CLI's choice, not a failure of injection, so the judge exempts them from the id and symbol-set
+// invariants while the events still have to resolve.
+export function cliSkips(log, work) {
+    const skipped = new Map()
+    // The CLI prints real paths; the workspace may be reached through a symlink (/var on macOS).
+    const roots = [...new Set([work, realpathSync(work)])]
+    for (const match of (log ?? '').matchAll(/Skipping (\/\S+?\.(?:[mc]?js)(?:\.map)?)(?::| because| -) ?([^\n]*)/g)) {
+        const absolute = match[1].replace(/\.map$/, '')
+        const root = roots.find((candidate) => absolute.startsWith(candidate + path.sep))
+        if (root) skipped.set(path.relative(root, absolute), match[2].trim().slice(0, 160))
+    }
+    return skipped
+}
+
+export function collectDist(work, dist, fixture, log) {
     const chunks = []
     const mapsLeft = []
-    for (const file of listDist(dist)) {
+    const skipped = cliSkips(log, work)
+    for (const file of listDist(dist, fixture)) {
         if (file.endsWith('.map')) {
             mapsLeft.push(file)
             continue
@@ -66,9 +95,57 @@ export function collectDist(work, dist) {
             code,
             chunkId: CHUNK_ID_COMMENT.exec(code)?.[1] ?? null,
             sourceMappingURL: SOURCE_MAPPING_URL.test(code),
+            cliSkipped: skipped.get(path.relative(work, absolute)) ?? null,
         })
     }
     return { chunks, mapsLeft }
+}
+
+/**
+ * Whether the CLI's on-disk rewrite kept every original byte. `pristine` maps file names to the
+ * bytes the bundler wrote; the rewritten chunk must still contain them, minus the
+ * sourceMappingURL line the CLI strips with --delete-after. A rewrite that keeps the original
+ * length while prepending a snippet (posthog#122580) fails this.
+ */
+export function collectInjection(pristine, chunks) {
+    return chunks.map((chunk) => {
+        const original = pristine[chunk.file]
+        if (original === undefined) return { file: chunk.file, intact: null }
+        const body = original.replace(/^\/\/# sourceMappingURL=[^\n]*\n?/gm, '')
+        return { file: chunk.file, intact: chunk.code.includes(body), grew: chunk.code.length - original.length }
+    })
+}
+
+/**
+ * Subresource Integrity: every `integrity` attribute in the built HTML must match the bytes of
+ * the file it names, as a browser would check them. A plugin that rewrote a chunk after the SRI
+ * plugin hashed it would leave a page the browser refuses to run.
+ */
+export function collectIntegrity(work, fixture) {
+    if (!fixture.integrity) return null
+    const htmlPath = path.join(work, fixture.integrity)
+    if (!existsSync(htmlPath)) return []
+    const html = readFileSync(htmlPath, 'utf8')
+    const base = path.dirname(htmlPath)
+    const checks = []
+    // Attribute values may be quoted or, after HTML minification, bare.
+    const attribute = (tag, name) => {
+        const match = new RegExp(`\\b${name}=(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`).exec(tag)
+        return match ? (match[1] ?? match[2] ?? match[3]) : undefined
+    }
+    for (const tag of html.matchAll(/<(?:script|link)\b[^>]*>/gi)) {
+        const src = attribute(tag[0], 'src') ?? attribute(tag[0], 'href')
+        const integrity = attribute(tag[0], 'integrity')
+        if (!src || !integrity) continue
+        const file = path.join(base, src.replace(/^\//, ''))
+        const results = integrity.split(/\s+/).map((entry) => {
+            const [algorithm, expected] = entry.split('-')
+            const actual = existsSync(file) ? createHash(algorithm).update(readFileSync(file)).digest('base64') : null
+            return { algorithm, ok: actual === expected }
+        })
+        checks.push({ src, file: path.relative(work, file), ok: results.every((result) => result.ok), algorithms: results.map((result) => result.algorithm) })
+    }
+    return checks
 }
 
 export function collectSymbolSets(chunks, api, releaseIds, releaseId) {

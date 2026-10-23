@@ -109,6 +109,10 @@ export function createErrorTrackingApi({ apiKey, projectId, fault, server = {} }
         }
         if (request.method === 'POST' && action === 'symbol_sets/bulk_start_upload') {
             const { symbol_sets: requested, upload_attempt_id, force } = request.body
+            // The server rejects one request naming a chunk id twice (posthog#39980).
+            const seen = new Set()
+            const duplicates = requested.map((set) => set.chunk_id).filter((id) => seen.size === seen.add(id).size)
+            if (duplicates.length) return answer(apiError(400, 'invalid_chunk_ids', `Duplicate chunk IDs provided: ${duplicates.join(', ')}`))
             const id_map = {}
             for (const set of requested) {
                 const existing = symbolSets.get(set.chunk_id)

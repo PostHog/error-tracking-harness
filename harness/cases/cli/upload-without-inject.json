@@ -1,0 +1,20 @@
+{
+    "mode": "cli",
+    "description": "sourcemap upload on files nobody injected: from posthog-cli 0.18.11 that is not an error (no uploadable pair, nothing to upload, exit 0), but nothing is uploaded and, since no upload happened, the maps stay on disk even with --delete-after. Older CLIs failed the command instead.",
+    "options": {
+        "sourcemaps": {
+            "releaseMode": "event"
+        }
+    },
+    "cli": {
+        "command": "upload"
+    },
+    "minCli": "0.18.11",
+    "expect": {
+        "cli": "green",
+        "chunkIds": "none",
+        "maps": "kept-visible",
+        "symbols": "none",
+        "events": "unresolved"
+    }
+}

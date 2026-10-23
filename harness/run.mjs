@@ -11,7 +11,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import path from 'node:path'
-import { loadCases, loadFixtures, planMatrix } from './plan.mjs'
+import { loadCases, loadFixtures, overlayable, planMatrix } from './plan.mjs'
 import { loadSubject, selectedPlugin } from './subject.mjs'
 import { executeCase, discardWork } from './execute.mjs'
 import { judge } from './judge.mjs'
@@ -85,10 +85,14 @@ if (!clis.length) {
     clis.push(...versions.map(ensureCli))
 }
 
-const fixtures = loadFixtures(path.join(root, 'fixtures'), list(args.fixtures))
+let fixtures = loadFixtures(path.join(root, 'fixtures'), list(args.fixtures))
 const cases = loadCases(path.join(root, 'harness/cases'), args.cases)
 const subject = loadSubject(args.subject)
 const selection = args.plugins ?? (subject.size ? 'subject' : 'latest')
+if (selection === 'subject') {
+    for (const fixture of fixtures.filter((candidate) => !overlayable(candidate))) console.log(`skipping ${fixture.name}: its layout takes no tarball overlay`)
+    fixtures = fixtures.filter(overlayable)
+}
 if (selection === 'subject' && !subject.size) throw new Error(`--plugins subject but no tarballs in ${args.subject}`)
 const plugins = new Map(fixtures.map((fixture) => [fixture.name, selectedPlugin(fixture, selection, subject)]))
 const matrix = planMatrix({ clis, fixtures, cases, plugins })

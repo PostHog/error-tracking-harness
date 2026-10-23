@@ -1,0 +1,12 @@
+{
+    "mode": "cli",
+    "description": "The two-pass flow frameworks use (@posthog/nuxt, Turbopack): sourcemap inject, then sourcemap upload --delete-after over the same directory.",
+    "options": {
+        "sourcemaps": {
+            "releaseMode": "event"
+        }
+    },
+    "cli": {
+        "command": "inject-upload"
+    }
+}

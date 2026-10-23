@@ -1,0 +1,23 @@
+{
+    "description": "No git checkout, but the GitHub Actions variables are set: the CLI derives the release from them (posthog#38012 is what users see when neither is available).",
+    "options": {
+        "sourcemaps": {
+            "releaseMode": "event",
+            "releaseName": null,
+            "releaseVersion": null
+        }
+    },
+    "env": {
+        "GITHUB_ACTIONS": "true",
+        "GITHUB_REF_NAME": "main",
+        "GITHUB_SHA": "4f0a1b2c3d4e5f60718293a4b5c6d7e8f9a0b1c2",
+        "GITHUB_REPOSITORY": "posthog/harness-app",
+        "GITHUB_SERVER_URL": "https://github.com"
+    },
+    "expect": {
+        "release": {
+            "name": "harness-app",
+            "version": "4f0a1b2c3d4e5f60718293a4b5c6d7e8f9a0b1c2"
+        }
+    }
+}

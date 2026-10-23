@@ -76,6 +76,32 @@ throw. The config reads the case's plugin options from one variable:
 const posthogOptions = JSON.parse(process.env.POSTHOG_HARNESS_OPTIONS)
 ```
 
+A fixture with `"subject": false` (the pnpm-isolated layout, where the plugin's dependencies live
+under `.pnpm` and a tarball overlay cannot reach them) is skipped under `--plugins subject`.
+
+A fixture with `"mode": "next"` is a Next.js project (`fixtures/NEXT.md`): its `runtime` is an HTTP
+server the harness starts and requests, `distGlobs`/`distIgnore` pick the files under `.next` to
+judge, `volatileChunks` names the runtime chunks whose bytes change per release by design,
+`optionalIds` names files the bundler may emit without a map, and `cliSelection: edges` runs it
+against the oldest and newest CLI only. Files the CLI itself logged as skipped are exempt from the
+id and symbol-set invariants.
+
+A fixture with `"mode": "nuxt"` is a Nuxt project: `@posthog/nuxt` runs posthog-cli on disk over
+`.output/public` before Nitro writes its manifest and over `.output/server` at close. Its runtime
+is the Nitro server (`node .output/server/index.mjs`), addressed through `PORT`/`HOST` variables
+(`runtime.portEnv`, `runtime.hostEnv`); Nitro's traced `server/node_modules` is left out.
+
+A fixture with `"integrity": "<built html>"` is a browser build whose HTML carries Subresource
+Integrity hashes (`vite-plugin-sri3`, `webpack-subresource-integrity`): every `integrity` attribute
+must match the served bytes, which fails if anything rewrote a chunk after the SRI plugin hashed it.
+Such fixtures have `"runtime": { "kind": "none" }` until a browser runtime exists, so the exception
+checks are skipped there.
+
+A fixture with `"mode": "cli"` has no plugin: it builds plain output with source maps and the
+harness runs `posthog-cli sourcemap process | inject | upload` on it afterwards, the way a user
+without a bundler plugin does (and the way `@posthog/nuxt` and Turbopack builds do). Cases carry
+a matching `"mode"`; a case only runs on fixtures of its mode.
+
 To add a fixture, copy one, change the pins, `pnpm install`, commit the lockfile, add its `COPY`
 lines to the `Dockerfile` and its name to `.github/workflows/run.yml`.
 
@@ -106,13 +132,25 @@ lines to the `Dockerfile` and its name to `.github/workflows/run.yml`.
   Cloudflare R2), with a `status` and optional error `code`.
 - `server` shapes a healthy server: `presign: both | post-only` selects the upload URLs
   `bulk_start_upload` returns (older servers sent only the POST form; the CLI requires it).
+- `cli: { command: process | inject-upload | upload, input: directory | stdin }` drives the CLI on a
+  `cli`-mode fixture with the flags and environment the plugins use.
+- `env` adds variables to the otherwise scrubbed build environment (CI metadata the CLI reads).
+- `git: { remote, worktree }` builds inside a git checkout made from the fixture, with that remote
+  URL, optionally as a linked worktree. The CLI derives a release from it and copies what it finds
+  into the release metadata.
+- `cliBinary: fixture` leaves `cliBinaryPath` unset so the plugin resolves the `@posthog/cli` the
+  fixture installed; the case runs once per fixture, outside the matrix's CLI dimension.
 - `minCli` skips the case on older CLIs; `minPlugin`, keyed by plugin name, on older plugins.
 - `expect` values are a string, or an object keyed by plugin name since the plugins disagree on
-  purpose: `build` green|fails, `chunkIds` all|none, `maps` deleted|kept-hidden|kept-visible,
+  purpose: `build` green|fails, `cli` green|fails, `chunkIds` all|none, `maps`
+  deleted|dangling|kept-hidden|kept-visible (dangling: maps gone, comment left),
   `symbols` all|none, `events` resolved|unresolved|no-release, `transport` PUT|POST, `reuploads`
-  chunk count per plugin for the second release, with its own `minCli` and `minPlugin`.
+  chunk count per plugin for the second release, with its own `minCli` and `minPlugin`,
+  `release: { name, version }` for the row the CLI created (`version: "commit"` is the checkout's
+  HEAD), and `metadataFree`, text that must not appear in the release metadata.
 
-Everything not named in `expect` is an invariant checked on every green release: each emitted chunk
+Everything not named in `expect` is an invariant checked on every green release: on a `cli` fixture
+the rewritten files still contain every byte the bundler wrote (posthog#122580); each emitted chunk
 carries a chunk id; each id has a finished, decodable symbol set whose stored source lines up with
 the file on disk; the release exists and the symbol sets are bound to it or not according to the
 mode; every in-bundle frame carries its chunk id; the crash frame (the last one) resolves through

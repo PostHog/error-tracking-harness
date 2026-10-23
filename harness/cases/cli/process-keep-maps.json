@@ -1,0 +1,16 @@
+{
+    "mode": "cli",
+    "description": "sourcemap process without --delete-after keeps the maps and their comments.",
+    "options": {
+        "sourcemaps": {
+            "releaseMode": "event",
+            "deleteAfterUpload": false
+        }
+    },
+    "cli": {
+        "command": "process"
+    },
+    "expect": {
+        "maps": "kept-visible"
+    }
+}
