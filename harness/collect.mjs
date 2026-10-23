@@ -133,7 +133,7 @@ export function collectIntegrity(work, fixture) {
         const match = new RegExp(`\\b${name}=(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`).exec(tag)
         return match ? (match[1] ?? match[2] ?? match[3]) : undefined
     }
-    for (const tag of html.matchAll(/<(?:script|link)\b[^>]*>/g)) {
+    for (const tag of html.matchAll(/<(?:script|link)\b[^>]*>/gi)) {
         const src = attribute(tag[0], 'src') ?? attribute(tag[0], 'href')
         const integrity = attribute(tag[0], 'integrity')
         if (!src || !integrity) continue
