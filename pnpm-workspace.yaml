@@ -1,0 +1,4 @@
+minimumReleaseAge: 10080
+nodeLinker: hoisted
+# Playwright only drives Chromium; the browser itself is installed with `pnpm install:browser`.
+allowBuilds: {}

@@ -143,7 +143,10 @@ export function judge(evidence, kase) {
             failures.push(`${tag}: the bundle was not run`)
             return
         }
-        if (release.runtime.code !== 0) failures.push(`${tag}: the bundle exited with ${release.runtime.code}`)
+        if (release.runtime.code !== 0) {
+            const detail = release.runtime.pageErrors?.length ? ` (page errors: ${release.runtime.pageErrors.slice(0, 2).join(' | ')})` : ''
+            failures.push(`${tag}: the bundle exited with ${release.runtime.code}${detail}`)
+        }
         judgeEvents(release.events, { tag, expected: expected.events, mode, release, throws: evidence.throws, chunkIds: expected.chunkIds }, failures)
 
         if (index === 1 && expect.reuploads) {

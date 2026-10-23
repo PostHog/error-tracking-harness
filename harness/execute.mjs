@@ -1,8 +1,10 @@
 // Runs one cell of the matrix: build the fixture as its own process in a scrubbed environment,
 // run the bundle, and collect evidence. Nothing here decides pass or fail; see judge.mjs.
 import { execFileSync, spawn } from 'node:child_process'
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs'
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync, existsSync } from 'node:fs'
 import { createServer } from 'node:net'
+import { createServer as createHttpServer } from 'node:http'
+import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createMockServer } from './mock-server.mjs'
@@ -10,6 +12,7 @@ import { createErrorTrackingApi } from './mock-api.mjs'
 import { prepareNodeModules } from './subject.mjs'
 import { collectDist, collectEvents, collectInjection, collectIntegrity, collectSymbolSets, expectedThrows, listDist } from './collect.mjs'
 
+const harnessRoot = path.resolve(import.meta.dirname, '..')
 const API_KEY = 'phx_harness_personal_key'
 const PROJECT_ID = '4242'
 const RELEASE_NAME = 'harness-app'
@@ -192,6 +195,66 @@ async function runHttp({ fixture, work, env, log }) {
     }
 }
 
+// A browser runtime (`runtime: { kind: 'browser', serve, page }`): serve the built directory over
+// loopback, open the page in headless Chromium with the mock's origin as ?host=, and wait for the
+// page to capture its exceptions. Page errors and failed requests are evidence: a chunk whose SRI
+// hash no longer matches is refused by the browser and never runs.
+function contentType(file) {
+    if (/\.(m?js|cjs)$/.test(file)) return 'text/javascript'
+    if (file.endsWith('.html')) return 'text/html'
+    if (file.endsWith('.css')) return 'text/css'
+    if (file.endsWith('.map') || file.endsWith('.json')) return 'application/json'
+    return 'application/octet-stream'
+}
+
+async function runBrowser({ fixture, work, host, expectedEvents, mock, log }) {
+    const root = path.join(work, fixture.runtime.serve)
+    const served = []
+    const server = createHttpServer((request, response) => {
+        const pathname = decodeURIComponent(new URL(request.url, 'http://127.0.0.1').pathname)
+        const file = path.join(root, pathname === '/' ? fixture.runtime.page : pathname)
+        if (!file.startsWith(root) || !existsSync(file) || !statSync(file).isFile()) {
+            served.push({ path: pathname, status: 404 })
+            response.writeHead(404).end()
+            return
+        }
+        served.push({ path: pathname, status: 200 })
+        response.writeHead(200, { 'Content-Type': contentType(file), 'Cache-Control': 'no-store' })
+        response.end(readFileSync(file))
+    })
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const origin = `http://127.0.0.1:${server.address().port}`
+    const { chromium } = createRequire(path.join(harnessRoot, 'package.json'))('playwright')
+    const browser = await chromium.launch({ headless: true })
+    const pageErrors = []
+    const consoleErrors = []
+    const failedRequests = []
+    try {
+        const page = await browser.newPage()
+        page.on('pageerror', (error) => pageErrors.push(error.message))
+        page.on('console', (message) => {
+            if (message.type() === 'error') consoleErrors.push(message.text())
+        })
+        page.on('requestfailed', (request) => failedRequests.push({ url: request.url(), error: request.failure()?.errorText }))
+        await page.goto(`${origin}${fixture.runtime.page}?host=${encodeURIComponent(host)}`, { waitUntil: 'load' })
+        const deadline = Date.now() + 20_000
+        while (Date.now() < deadline) {
+            const captured = mock.inspect().events.filter((event) => event.event === '$exception').length
+            if (captured >= expectedEvents) break
+            await new Promise((resolve) => setTimeout(resolve, 200))
+        }
+        await page.waitForTimeout(500)
+        const captured = mock.inspect().events.filter((event) => event.event === '$exception').length
+        const result = { code: captured >= expectedEvents && pageErrors.length === 0 ? 0 : 1, origin, pageErrors, consoleErrors, failedRequests, served }
+        if (log) writeFileSync(log, JSON.stringify(result, null, 2) + '\n')
+        return result
+    } finally {
+        await browser.close()
+        server.closeAllConnections()
+        await new Promise((resolve) => server.close(resolve))
+    }
+}
+
 // Case options override the defaults; a null deletes the key so a case can leave out a default.
 function mergeOptions(base, patch) {
     const merged = { ...base }
@@ -307,12 +370,14 @@ export async function executeCase({ cli, fixture, kase, selection, subject, outp
                 const log = path.join(output, `${tag}-runtime.log`)
                 if (fixture.runtime?.kind === 'none') {
                     runtime = null
+                } else if (fixture.runtime?.kind === 'browser') {
+                    runtime = await runBrowser({ fixture, work, host, expectedEvents: Object.keys(evidence.throws).length, mock, log })
                 } else if (fixture.runtime?.kind === 'http') {
                     runtime = await runHttp({ fixture, work, env: runtimeEnv, log })
                 } else if (existsSync(path.join(work, fixture.entry))) {
                     runtime = await run(process.execPath, [path.join(work, fixture.entry)], { cwd: work, log, env: runtimeEnv })
                 }
-                if (runtime) events = collectEvents({ events: mock.inspect().events, chunks, api: state, work, throws: evidence.throws })
+                if (runtime) events = collectEvents({ events: mock.inspect().events, chunks, api: state, work, throws: evidence.throws, served: runtime.origin && { origin: runtime.origin, root: path.join(work, fixture.runtime.serve) } })
             }
             // Keep the server's copy of any chunk that no longer matches disk, for diagnosis.
             for (const set of state.symbolSets) {
@@ -339,25 +404,27 @@ export async function executeCase({ cli, fixture, kase, selection, subject, outp
                 symbolSets: collectSymbolSets(chunks, state, releaseIds.slice(0, -1), release?.id),
                 apiCalls: state.calls.map((call) => ({ action: call.action, status: call.status })),
                 uploadedChunkIds: uploaded,
-                runtime: runtime && { code: runtime.code, signal: runtime.signal ?? null, requests: runtime.requests ?? null },
+                runtime: runtime && { code: runtime.code, signal: runtime.signal ?? null, requests: runtime.requests ?? null, pageErrors: runtime.pageErrors ?? null, failedRequests: runtime.failedRequests ?? null },
                 events,
                 mockErrors: [...state.errors, ...mock.inspect().errors],
             })
             // Keep what each later release needs for the cross-release checks.
             evidence.releases.at(-1)._chunks = chunks
             evidence.releases.at(-1)._events = mock.inspect().events
+            evidence.releases.at(-1)._served = runtime?.origin && { origin: runtime.origin, root: path.join(work, fixture.runtime.serve) }
         }
 
         // Re-resolve the first release's exceptions against what the server holds at the end.
         const first = evidence.releases[0]
         if (evidence.releases.length > 1 && first._events?.length) {
             evidence.afterFinalUpload = {
-                events: collectEvents({ events: first._events, chunks: first._chunks, api: api.snapshot(), work, throws: evidence.throws }),
+                events: collectEvents({ events: first._events, chunks: first._chunks, api: api.snapshot(), work, throws: evidence.throws, served: first._served }),
             }
         }
         for (const release of evidence.releases) {
             delete release._chunks
             delete release._events
+            delete release._served
         }
         writeFileSync(path.join(output, 'evidence.json'), JSON.stringify(evidence, null, 2))
         if (evidence.git?.worktree) rmSync(`${work}-repository`, { recursive: true, force: true })

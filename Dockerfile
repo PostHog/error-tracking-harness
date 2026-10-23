@@ -8,6 +8,9 @@ RUN npm install -g pnpm@11.7.0 && npm cache clean --force
 WORKDIR /rig
 
 # Layer 1: dependencies and binaries. Keyed on the lockfiles and cli-versions.txt only.
+# The harness's one dependency drives headless Chromium for browser fixtures.
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile && pnpm exec playwright install --with-deps chromium
 COPY fixtures/webpack-5.112/package.json fixtures/webpack-5.112/pnpm-workspace.yaml fixtures/webpack-5.112/pnpm-lock.yaml fixtures/webpack-5.112/
 COPY fixtures/rollup-4/package.json fixtures/rollup-4/pnpm-workspace.yaml fixtures/rollup-4/pnpm-lock.yaml fixtures/rollup-4/
 COPY fixtures/vite-8/package.json fixtures/vite-8/pnpm-workspace.yaml fixtures/vite-8/pnpm-lock.yaml fixtures/vite-8/
