@@ -22,6 +22,7 @@ jobs:
                   username: ${{ github.actor }}
                   password: ${{ secrets.GITHUB_TOKEN }}
             - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+              id: publish
               with:
                   context: .
                   platforms: linux/amd64,linux/arm64
@@ -31,3 +32,17 @@ jobs:
                       ghcr.io/posthog/error-tracking-harness:latest
                   cache-from: type=gha
                   cache-to: type=gha,mode=max
+            # Consumers pin this digest, never a tag: a digest cannot change under their CI.
+            - name: Record the digest consumers pin
+              env:
+                  DIGEST: ${{ steps.publish.outputs.digest }}
+              run: |
+                  {
+                    echo "## Image"
+                    echo
+                    echo 'Pin in consumer workflows (comment with the harness commit):'
+                    echo
+                    echo '```yaml'
+                    echo "HARNESS_IMAGE: ghcr.io/posthog/error-tracking-harness@$DIGEST # ${GITHUB_SHA::12}"
+                    echo '```'
+                  } >> "$GITHUB_STEP_SUMMARY"
