@@ -167,7 +167,7 @@ export async function executeCase({ cli, fixture, kase, selection, subject, outp
                     personalApiKey: API_KEY,
                     projectId: PROJECT_ID,
                     host,
-                    cliBinaryPath: cli.path,
+                    ...(cli.path ? { cliBinaryPath: cli.path } : {}),
                     logLevel: 'debug',
                     sourcemaps: { enabled: true, releaseName: RELEASE_NAME, releaseVersion, deleteAfterUpload: true },
                 },

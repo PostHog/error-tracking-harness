@@ -1,0 +1,5 @@
+minimumReleaseAge: 10080
+# pnpm's default layout: only direct dependencies at the top level (posthog-js#2968).
+nodeLinker: isolated
+allowBuilds:
+    "@posthog/cli": true

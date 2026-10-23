@@ -76,6 +76,9 @@ throw. The config reads the case's plugin options from one variable:
 const posthogOptions = JSON.parse(process.env.POSTHOG_HARNESS_OPTIONS)
 ```
 
+A fixture with `"subject": false` (the pnpm-isolated layout, where the plugin's dependencies live
+under `.pnpm` and a tarball overlay cannot reach them) is skipped under `--plugins subject`.
+
 A fixture with `"mode": "cli"` has no plugin: it builds plain output with source maps and the
 harness runs `posthog-cli sourcemap process | inject | upload` on it afterwards, the way a user
 without a bundler plugin does (and the way `@posthog/nuxt` and Turbopack builds do). Cases carry
@@ -117,6 +120,8 @@ lines to the `Dockerfile` and its name to `.github/workflows/run.yml`.
 - `git: { remote, worktree }` builds inside a git checkout made from the fixture, with that remote
   URL, optionally as a linked worktree. The CLI derives a release from it and copies what it finds
   into the release metadata.
+- `cliBinary: fixture` leaves `cliBinaryPath` unset so the plugin resolves the `@posthog/cli` the
+  fixture installed; the case runs once per fixture, outside the matrix's CLI dimension.
 - `minCli` skips the case on older CLIs; `minPlugin`, keyed by plugin name, on older plugins.
 - `expect` values are a string, or an object keyed by plugin name since the plugins disagree on
   purpose: `build` green|fails, `cli` green|fails, `chunkIds` all|none, `maps`

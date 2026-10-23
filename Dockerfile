@@ -12,8 +12,20 @@ COPY fixtures/webpack-5.112/package.json fixtures/webpack-5.112/pnpm-workspace.y
 COPY fixtures/rollup-4/package.json fixtures/rollup-4/pnpm-workspace.yaml fixtures/rollup-4/pnpm-lock.yaml fixtures/rollup-4/
 COPY fixtures/vite-8/package.json fixtures/vite-8/pnpm-workspace.yaml fixtures/vite-8/pnpm-lock.yaml fixtures/vite-8/
 COPY fixtures/cli-rollup-4/package.json fixtures/cli-rollup-4/pnpm-workspace.yaml fixtures/cli-rollup-4/pnpm-lock.yaml fixtures/cli-rollup-4/
-RUN for fixture in fixtures/*/; do (cd "$fixture" && pnpm install --frozen-lockfile --ignore-scripts); done \
+COPY fixtures/vite-8-isolated/package.json fixtures/vite-8-isolated/pnpm-workspace.yaml fixtures/vite-8-isolated/pnpm-lock.yaml fixtures/vite-8-isolated/
+# Build scripts run only where a fixture's pnpm-workspace.yaml allows them: @posthog/cli's
+# postinstall, which downloads the binary the plugins resolve when given no path.
+RUN for fixture in fixtures/*/; do (cd "$fixture" && pnpm install --frozen-lockfile); done \
     && pnpm store prune
+# pnpm runs a package's build script once and reuses the package from its store for the next
+# fixture without the files that script produced, so each fixture's shim must be checked and
+# rebuilt where the binary is missing. A fixture without @posthog/cli (cli mode) has no shim.
+RUN set -eu; for fixture in fixtures/*/; do \
+        shim=""; for candidate in node_modules/.bin/posthog-cli node_modules/.pnpm/node_modules/.bin/posthog-cli; do \
+            [ -e "$fixture$candidate" ] && shim="$candidate" && break; done; \
+        [ -n "$shim" ] || continue; \
+        (cd "$fixture" && ("$shim" --version >/dev/null 2>&1 || pnpm rebuild @posthog/cli) && "$shim" --version); \
+    done
 
 COPY cli-versions.txt .
 ARG TARGETARCH
