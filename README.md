@@ -91,6 +91,12 @@ A fixture with `"mode": "nuxt"` is a Nuxt project: `@posthog/nuxt` runs posthog-
 is the Nitro server (`node .output/server/index.mjs`), addressed through `PORT`/`HOST` variables
 (`runtime.portEnv`, `runtime.hostEnv`); Nitro's traced `server/node_modules` is left out.
 
+A fixture with `"integrity": "<built html>"` is a browser build whose HTML carries Subresource
+Integrity hashes (`vite-plugin-sri3`, `webpack-subresource-integrity`): every `integrity` attribute
+must match the served bytes, which fails if anything rewrote a chunk after the SRI plugin hashed it.
+Such fixtures have `"runtime": { "kind": "none" }` until a browser runtime exists, so the exception
+checks are skipped there.
+
 A fixture with `"mode": "cli"` has no plugin: it builds plain output with source maps and the
 harness runs `posthog-cli sourcemap process | inject | upload` on it afterwards, the way a user
 without a bundler plugin does (and the way `@posthog/nuxt` and Turbopack builds do). Cases carry

@@ -4,7 +4,8 @@
 // `expect` vocabulary (each value may be a string, or an object keyed by plugin name):
 //   build:     green | fails                      default green
 //   cli:       green | fails                      default green; cli-mode fixtures only
-//   chunkIds:  all | none                         default all (none: injection never ran)
+//   chunkIds:  all | none | any                   default all (none: injection never ran; any: not judged,
+//                                                  e.g. webpack stamps debug ids whether or not the plugin ran)
 //   maps:      deleted | dangling | kept-hidden | kept-visible  default deleted
 //   mapsBy:    { '<glob>': <maps value> }        the same, judged per group of files
 //              (dangling: maps gone but a sourceMappingURL comment still points at them)
@@ -132,12 +133,18 @@ export function judge(evidence, kase) {
             failures.push(`${tag}: ${finished.length} symbol sets finished, expected none`)
         }
 
+        if (release.integrity) {
+            if (release.integrity.length === 0) failures.push(`${tag}: no integrity attributes found in the built HTML`)
+            for (const check of release.integrity) if (!check.ok) failures.push(`${tag}: integrity of ${check.src} no longer matches ${check.file}`)
+        }
+        // A fixture without a runtime (a browser bundle, until Chromium arrives) ends here.
+        if (evidence.fixture.runtime === 'none') return
         if (!release.runtime) {
             failures.push(`${tag}: the bundle was not run`)
             return
         }
         if (release.runtime.code !== 0) failures.push(`${tag}: the bundle exited with ${release.runtime.code}`)
-        judgeEvents(release.events, { tag, expected: expected.events, mode, release, throws: evidence.throws }, failures)
+        judgeEvents(release.events, { tag, expected: expected.events, mode, release, throws: evidence.throws, chunkIds: expected.chunkIds }, failures)
 
         if (index === 1 && expect.reuploads) {
             const count = expect.reuploads[`${plugin}:${bundler}`] ?? expect.reuploads[plugin]
@@ -160,7 +167,7 @@ export function judge(evidence, kase) {
         if (mode === 'symbol-set' && same) failures.push('symbol-set mode: chunk ids reused across releases')
         // Event mode uploads with force, so a later release can overwrite a symbol set an older
         // deployment still points at. Its exceptions must still resolve against what is stored now.
-        if (evidence.afterFinalUpload && expected.events !== 'unresolved') {
+        if (evidence.afterFinalUpload && expected.events !== 'unresolved' && evidence.fixture.runtime !== 'none') {
             judgeEvents(
                 evidence.afterFinalUpload.events,
                 { tag: 'release 1 after the last upload', expected: expected.events, mode, release: green[0], throws: evidence.throws },
@@ -172,7 +179,7 @@ export function judge(evidence, kase) {
     return { ok: failures.length === 0, failures }
 }
 
-function judgeEvents(events, { tag, expected, mode, release, throws }, failures) {
+function judgeEvents(events, { tag, expected, mode, release, throws, chunkIds = 'all' }, failures) {
     for (const name of Object.keys(throws)) {
         const event = events.find((candidate) => candidate.case === name)
         if (!event) {
@@ -185,7 +192,8 @@ function judgeEvents(events, { tag, expected, mode, release, throws }, failures)
         if (event.stacktraceType !== 'raw') failures.push(`${label}: stacktrace type ${event.stacktraceType}`)
         const ours = event.frames.filter((frame) => frame.file)
         if (!ours.length) failures.push(`${label}: no frame points into dist (${event.frames.map((frame) => frame.filename)})`)
-        for (const frame of ours) {
+        // With chunk ids unjudged, a file may carry a bundler debug id the runtime never registered.
+        for (const frame of chunkIds === 'any' ? [] : ours) {
             if (frame.chunkId !== frame.expectedChunkId) failures.push(`${label}: ${frame.file}:${frame.lineno} has chunk_id ${frame.chunkId}`)
         }
         if (!event.crash?.file) {

@@ -1,5 +1,5 @@
 {
-    "description": "Event mode and the release cannot be created (the API answers 500). The webpack plugin aborts injection: no chunk ids, no upload, maps deleted, build green. The rollup plugin fails the build in renderChunk.",
+    "description": "Event mode and the release cannot be created (the API answers 500). The webpack plugin aborts injection: no chunk ids, no upload, maps deleted, build green. The rollup plugin fails the build in renderChunk. webpack 5.104+ stamps its own debug ids into chunks whether or not the plugin's injection ran, so chunk ids are not judged there.",
     "options": {
         "sourcemaps": {
             "releaseMode": "event"
@@ -18,7 +18,7 @@
             "@posthog/rollup-plugin": "fails"
         },
         "chunkIds": {
-            "@posthog/webpack-plugin": "none"
+            "@posthog/webpack-plugin": "any"
         },
         "maps": {
             "@posthog/webpack-plugin": "deleted",

@@ -1,5 +1,6 @@
 // Turns what a build and its runtime left behind into evidence.json: plain data the judge reads.
 // Every lookup that needs a source map happens here, so the judge needs none.
+import { createHash } from 'node:crypto'
 import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs'
 import path from 'node:path'
 import { originalPosition } from './symbol-data.mjs'
@@ -113,6 +114,38 @@ export function collectInjection(pristine, chunks) {
         const body = original.replace(/^\/\/# sourceMappingURL=[^\n]*\n?/gm, '')
         return { file: chunk.file, intact: chunk.code.includes(body), grew: chunk.code.length - original.length }
     })
+}
+
+/**
+ * Subresource Integrity: every `integrity` attribute in the built HTML must match the bytes of
+ * the file it names, as a browser would check them. A plugin that rewrote a chunk after the SRI
+ * plugin hashed it would leave a page the browser refuses to run.
+ */
+export function collectIntegrity(work, fixture) {
+    if (!fixture.integrity) return null
+    const htmlPath = path.join(work, fixture.integrity)
+    if (!existsSync(htmlPath)) return []
+    const html = readFileSync(htmlPath, 'utf8')
+    const base = path.dirname(htmlPath)
+    const checks = []
+    // Attribute values may be quoted or, after HTML minification, bare.
+    const attribute = (tag, name) => {
+        const match = new RegExp(`\\b${name}=(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`).exec(tag)
+        return match ? (match[1] ?? match[2] ?? match[3]) : undefined
+    }
+    for (const tag of html.matchAll(/<(?:script|link)\b[^>]*>/g)) {
+        const src = attribute(tag[0], 'src') ?? attribute(tag[0], 'href')
+        const integrity = attribute(tag[0], 'integrity')
+        if (!src || !integrity) continue
+        const file = path.join(base, src.replace(/^\//, ''))
+        const results = integrity.split(/\s+/).map((entry) => {
+            const [algorithm, expected] = entry.split('-')
+            const actual = existsSync(file) ? createHash(algorithm).update(readFileSync(file)).digest('base64') : null
+            return { algorithm, ok: actual === expected }
+        })
+        checks.push({ src, file: path.relative(work, file), ok: results.every((result) => result.ok), algorithms: results.map((result) => result.algorithm) })
+    }
+    return checks
 }
 
 export function collectSymbolSets(chunks, api, releaseIds, releaseId) {
