@@ -6,6 +6,11 @@
     "volatileChunks": [
         "static/chunks/webpack-*.js",
         "server/webpack-runtime.js",
-        "server/webpack-api-runtime.js"
+        "server/webpack-api-runtime.js",
+        "server/app/client/**"
+    ],
+    "optionalIds": [
+        "static/chunks/app/**",
+        "static/chunks/next/dist/**"
     ]
 }

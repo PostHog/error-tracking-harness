@@ -6,7 +6,7 @@ import { createServer } from 'node:net'
 import { createServer as createHttpServer } from 'node:http'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
-import path from 'node:path'
+import path, { matchesGlob } from 'node:path'
 import { createMockServer } from './mock-server.mjs'
 import { createErrorTrackingApi } from './mock-api.mjs'
 import { prepareNodeModules } from './subject.mjs'
@@ -147,7 +147,7 @@ function killGroup(child, signal) {
 // An HTTP runtime (`runtime: { kind: 'http', start, paths }`): start the built server from the
 // fixture's node_modules/.bin, wait for it to answer, request each path so the server captures
 // its exceptions, then stop the whole process group (frameworks fork workers).
-async function runHttp({ fixture, work, env, log }) {
+async function runHttp({ fixture, work, env, log, host, mock, expectedEvents, replay }) {
     const port = await availablePort()
     const origin = `http://127.0.0.1:${port}`
     // Frameworks take the port as flags (next start -p) or as variables (Nitro: PORT, HOST).
@@ -193,13 +193,18 @@ async function runHttp({ fixture, work, env, log }) {
         }
         // The SDK flushes on shutdown inside the handler; give the capture a moment to land.
         await new Promise((resolve) => setTimeout(resolve, 1500))
-        return { code: requests.every((request) => request.status === 200) ? 0 : 1, output, requests }
+        let page = null
+        if (fixture.runtime.browser) {
+            page = await openPage({ origin, page: fixture.runtime.browser.page, host, expectedEvents, mock, replay })
+        }
+        const ok = requests.every((request) => request.status === 200) && (!page || page.code === 0)
+        return { code: ok ? 0 : 1, output, requests, origin, pageErrors: page?.pageErrors ?? null, consoleErrors: page?.consoleErrors ?? null, failedRequests: page?.failedRequests ?? null, replayed: page?.replayed ?? null }
     } finally {
         killGroup(child, 'SIGTERM')
         const timer = setTimeout(() => killGroup(child, 'SIGKILL'), 5000)
         await exited
         clearTimeout(timer)
-        if (log) writeFileSync(log, output + '\n' + JSON.stringify(requests, null, 2) + '\n')
+        if (log) writeFileSync(log, output + '\n' + JSON.stringify({ requests }, null, 2) + '\n')
     }
 }
 
@@ -232,11 +237,28 @@ async function runBrowser({ fixture, work, host, expectedEvents, mock, log }) {
     })
     await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
     const origin = `http://127.0.0.1:${server.address().port}`
+    try {
+        const result = await openPage({ origin, page: fixture.runtime.page, host, expectedEvents, mock })
+        result.served = served
+        if (log) writeFileSync(log, JSON.stringify(result, null, 2) + '\n')
+        return result
+    } finally {
+        server.closeAllConnections()
+        await new Promise((resolve) => server.close(resolve))
+    }
+}
+
+// Opens `origin + page` in headless Chromium and waits for `expectedEvents` exceptions to reach
+// the mock. With `replay`, requests for immutable assets that existed in the previous release
+// are answered with that release's bytes, as a browser holding a tab open across a deploy
+// would see them (posthog-js#5332): the page must still work and report the new release.
+async function openPage({ origin, page: pagePath, host, expectedEvents, mock, replay }) {
     const { chromium } = createRequire(path.join(harnessRoot, 'package.json'))('playwright')
     const browser = await chromium.launch({ headless: true })
     const pageErrors = []
     const consoleErrors = []
     const failedRequests = []
+    const replayed = []
     try {
         const page = await browser.newPage()
         page.on('pageerror', (error) => pageErrors.push(error.message))
@@ -244,22 +266,23 @@ async function runBrowser({ fixture, work, host, expectedEvents, mock, log }) {
             if (message.type() === 'error') consoleErrors.push(message.text())
         })
         page.on('requestfailed', (request) => failedRequests.push({ url: request.url(), error: request.failure()?.errorText }))
-        await page.goto(`${origin}${fixture.runtime.page}?host=${encodeURIComponent(host)}`, { waitUntil: 'load' })
-        const deadline = Date.now() + 20_000
-        while (Date.now() < deadline) {
-            const captured = mock.inspect().events.filter((event) => event.event === '$exception').length
-            if (captured >= expectedEvents) break
-            await new Promise((resolve) => setTimeout(resolve, 200))
+        if (replay) {
+            await page.route('**/*', async (route) => {
+                const url = new URL(route.request().url())
+                const previous = url.origin === origin ? replay(decodeURIComponent(url.pathname)) : undefined
+                if (previous === undefined) return route.continue()
+                replayed.push(url.pathname)
+                return route.fulfill({ status: 200, contentType: contentType(url.pathname), body: previous })
+            })
         }
+        await page.goto(`${origin}${pagePath}?host=${encodeURIComponent(host)}`, { waitUntil: 'load' })
+        const captured = () => mock.inspect().events.filter((event) => event.event === '$exception').length
+        const deadline = Date.now() + 20_000
+        while (Date.now() < deadline && captured() < expectedEvents) await new Promise((resolve) => setTimeout(resolve, 200))
         await page.waitForTimeout(500)
-        const captured = mock.inspect().events.filter((event) => event.event === '$exception').length
-        const result = { code: captured >= expectedEvents && pageErrors.length === 0 ? 0 : 1, origin, pageErrors, consoleErrors, failedRequests, served }
-        if (log) writeFileSync(log, JSON.stringify(result, null, 2) + '\n')
-        return result
+        return { code: captured() >= expectedEvents && pageErrors.length === 0 ? 0 : 1, origin, pageErrors, consoleErrors, failedRequests, replayed }
     } finally {
         await browser.close()
-        server.closeAllConnections()
-        await new Promise((resolve) => server.close(resolve))
     }
 }
 
@@ -291,7 +314,7 @@ async function buildFixture({ fixture, work, options, binPath, extra, log }) {
     })
 }
 
-async function runFixture({ fixture, work, options, host, binPath, mock, log }) {
+async function runFixture({ fixture, work, options, host, binPath, mock, log, replay }) {
     const env = sandboxEnv(work, {
         PATH: binPath,
         POSTHOG_HARNESS_HOST: host,
@@ -302,7 +325,9 @@ async function runFixture({ fixture, work, options, host, binPath, mock, log }) 
     if (fixture.runtime?.kind === 'browser') {
         return runBrowser({ fixture, work, host, expectedEvents: Object.keys(fixture.throws).length, mock, log })
     }
-    if (fixture.runtime?.kind === 'http') return runHttp({ fixture, work, env, log })
+    if (fixture.runtime?.kind === 'http') {
+        return runHttp({ fixture, work, env, log, host, mock, expectedEvents: Object.keys(fixture.throws).length, replay })
+    }
     if (existsSync(path.join(work, fixture.entry))) {
         return run(process.execPath, [path.join(work, fixture.entry)], { cwd: work, log, env })
     }
@@ -323,6 +348,7 @@ export async function executeCase({ cli, fixture, kase, selection, subject, outp
             bundler: fixture.bundler,
             version: fixture.version,
             runtime: fixture.runtime?.kind ?? (fixture.runtime ?? 'node'),
+            immutable: fixture.immutable ?? null,
             volatileChunks: fixture.volatileChunks ?? [],
             optionalIds: fixture.optionalIds ?? [],
         },
@@ -394,10 +420,29 @@ export async function executeCase({ cli, fixture, kase, selection, subject, outp
             const { chunks, mapsLeft } = collectDist(work, dist, fixture, build.output + '\n' + cliLog)
             let runtime = null
             let events = null
+            let served = null
             if (build.code === 0) {
-                runtime = await runFixture({ fixture, work, options, host, binPath, mock, log: path.join(output, `${tag}-runtime.log`) })
-                if (runtime) events = collectEvents({ events: mock.inspect().events, chunks, api: state, work, throws: evidence.throws,
-                    served: runtime.origin && { origin: runtime.origin, root: path.join(work, fixture.runtime.serve) } })
+                // Replay the prior release's immutable assets while loading the new page, as a
+                // browser with cached files would across a deployment.
+                const previousDist = index > 0 && fixture.immutable ? path.join(output, `release-1.0.${index - 1}-dist`) : null
+                const prefix = fixture.runtime?.browser?.urlPrefix ?? '/'
+                const replay = previousDist && fixture.runtime?.browser
+                    ? (pathname) => {
+                          if (!pathname.startsWith(prefix)) return undefined
+                          const relative = pathname.slice(prefix.length)
+                          if (!matchesGlob(relative, fixture.immutable)) return undefined
+                          const file = path.join(previousDist, relative)
+                          return existsSync(file) ? readFileSync(file) : undefined
+                      }
+                    : undefined
+                runtime = await runFixture({ fixture, work, options, host, binPath, mock, replay,
+                    log: path.join(output, `${tag}-runtime.log`) })
+                served = runtime?.origin && {
+                    origin: runtime.origin,
+                    root: path.join(work, fixture.runtime?.browser?.root ?? fixture.runtime?.serve ?? '.'),
+                    strip: fixture.runtime?.browser?.urlPrefix ?? '',
+                }
+                if (runtime) events = collectEvents({ events: mock.inspect().events, chunks, api: state, work, throws: evidence.throws, served })
             }
             // Keep the server's copy of any chunk that no longer matches disk, for diagnosis.
             for (const set of state.symbolSets) {
@@ -424,13 +469,12 @@ export async function executeCase({ cli, fixture, kase, selection, subject, outp
                 symbolSets: collectSymbolSets(chunks, state, releaseIds.slice(0, -1), release?.id),
                 apiCalls: state.calls.map((call) => ({ action: call.action, status: call.status })),
                 uploadedChunkIds: uploaded,
-                runtime: runtime && { code: runtime.code, signal: runtime.signal ?? null, requests: runtime.requests ?? null, pageErrors: runtime.pageErrors ?? null, failedRequests: runtime.failedRequests ?? null },
+                runtime: runtime && { code: runtime.code, signal: runtime.signal ?? null, requests: runtime.requests ?? null, pageErrors: runtime.pageErrors ?? null, failedRequests: runtime.failedRequests ?? null, replayed: runtime.replayed ?? null },
                 events,
                 mockErrors: [...state.errors, ...mock.inspect().errors],
             })
             // Keep what each later release needs for the cross-release checks.
-            previousReleases.push({ chunks, events: mock.inspect().events,
-                served: runtime?.origin && { origin: runtime.origin, root: path.join(work, fixture.runtime.serve) } })
+            previousReleases.push({ chunks, events: mock.inspect().events, served })
         }
 
         // Re-resolve the first release's exceptions against what the server holds at the end.

@@ -10,7 +10,8 @@
         "next": "15.5.28",
         "react": "19.2.8",
         "react-dom": "19.2.8",
-        "posthog-node": "5.56.1"
+        "posthog-node": "5.56.1",
+        "posthog-js": "1.438.12"
     },
     "devDependencies": {
         "@posthog/nextjs-config": "1.11.3",

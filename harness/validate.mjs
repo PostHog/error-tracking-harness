@@ -1,7 +1,7 @@
 // Fail before a long matrix run when a case or fixture has a typo or an invalid combination.
-const FIXTURE = 'bundler cliSelection dist distGlobs distIgnore entry extends floorAlias integrity layout minCli minPlugin mode nodeModules optionalIds plugin runtime subject throws version volatileChunks'.split(' ')
+const FIXTURE = 'bundler cliSelection dist distGlobs distIgnore entry extends floorAlias immutable integrity layout minCli minPlugin mode nodeModules optionalIds plugin runtime subject throws version volatileChunks'.split(' ')
 const CASE = 'cli cliBinary description env expect fault git minCli minPlugin mode options releases server'.split(' ')
-const EXPECT = 'build chunkIds cli events maps mapsBy metadataFree release reuploads symbols transport'.split(' ')
+const EXPECT = 'build chunkIds cli events eventsBy maps mapsBy metadataFree release reuploads symbols transport'.split(' ')
 const MODES = ['plugin', 'cli', 'next', 'nuxt']
 const MAPS = ['deleted', 'dangling', 'kept-hidden', 'kept-visible']
 const EXPECT_VALUES = {
@@ -40,6 +40,19 @@ export function validateCase(config, name) {
         }
         if (config.expect.mapsBy && Object.values(config.expect.mapsBy).some((value) => !MAPS.includes(value))) {
             throw new Error(`case ${name}: invalid expect.mapsBy`)
+        }
+        if (config.expect.eventsBy !== undefined) {
+            const by = config.expect.eventsBy
+            if (!by || typeof by !== 'object' || Array.isArray(by)) throw new Error(`case ${name}: invalid expect.eventsBy`)
+            for (const [throwName, value] of Object.entries(by)) {
+                if (typeof value !== 'string' && (!value || typeof value !== 'object' || Array.isArray(value))) {
+                    throw new Error(`case ${name}: invalid expect.eventsBy.${throwName}`)
+                }
+                const choices = typeof value === 'string' ? [value] : Object.values(value)
+                if (choices.some((choice) => !EXPECT_VALUES.events.includes(choice))) {
+                    throw new Error(`case ${name}: invalid expect.eventsBy.${throwName}`)
+                }
+            }
         }
     }
     if (config.cli) {
