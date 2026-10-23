@@ -75,7 +75,10 @@ export function pluginAtLeast(plugin, floors) {
 // Slow fixtures (framework builds) run against the oldest and newest CLI only.
 function clisFor(fixture, clis) {
     if (fixture.cliSelection !== 'edges' || clis.length <= 2) return clis
-    const versioned = clis.filter((cli) => cli.version !== 'custom').sort((a, b) => compareVersions(a.version, b.version))
+    // Among the CLIs the fixture accepts, the oldest and the newest.
+    const versioned = clis
+        .filter((cli) => cli.version !== 'custom' && cliAtLeast(cli, fixture.minCli))
+        .sort((a, b) => compareVersions(a.version, b.version))
     const custom = clis.filter((cli) => cli.version === 'custom')
     return [...new Set([versioned[0], versioned.at(-1), ...custom].filter(Boolean))]
 }

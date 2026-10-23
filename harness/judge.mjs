@@ -6,6 +6,7 @@
 //   cli:       green | fails                      default green; cli-mode fixtures only
 //   chunkIds:  all | none                         default all (none: injection never ran)
 //   maps:      deleted | dangling | kept-hidden | kept-visible  default deleted
+//   mapsBy:    { '<glob>': <maps value> }        the same, judged per group of files
 //              (dangling: maps gone but a sourceMappingURL comment still points at them)
 //   symbols:   all | none                         default all
 //   events:    resolved | unresolved | no-release  default resolved
@@ -51,7 +52,11 @@ export function judge(evidence, kase) {
         // A fixture can name files whose id is optional: a bundler emits them without a map, so
         // nothing can be injected. One that does carry an id must still have its symbol set.
         const optional = (file) => (evidence.fixture.optionalIds ?? []).some((glob) => matchesGlob(file, glob))
-        const judged = release.chunks.filter((chunk) => !chunk.cliSkipped && (chunk.chunkId || !optional(chunk.file)))
+        // When a case expects no ids at all, every file is deliberately uninjected and what the
+        // CLI skipped is the point, not an exemption: its maps must still be judged.
+        const judged = release.chunks.filter(
+            (chunk) => (expected.chunkIds === 'none' || !chunk.cliSkipped) && (chunk.chunkId || !optional(chunk.file))
+        )
 
         if (release.cli) {
             const cli = release.cli.every((step) => step.code === 0) ? 'green' : 'fails'
@@ -73,7 +78,19 @@ export function judge(evidence, kase) {
         const mapsLeft = release.mapsLeft.filter((map) => judgedFiles.has(map.replace(/\.map$/, '')))
         const comments = judged.some((chunk) => chunk.sourceMappingURL)
         const maps = mapsLeft.length === 0 ? (comments ? 'dangling' : 'deleted') : comments ? 'kept-visible' : 'kept-hidden'
-        if (maps !== expected.maps) failures.push(`${tag}: maps ${maps} (${mapsLeft.slice(0, 4).join(', ') || 'none'}), expected ${expected.maps}`)
+        // `mapsBy` judges map cleanup per group of files (public assets vs a server bundle).
+        const mapsBy = expect.mapsBy
+        if (mapsBy) {
+            for (const [glob, want] of Object.entries(mapsBy)) {
+                const files = judged.filter((chunk) => matchesGlob(chunk.file, glob))
+                const left = mapsLeft.filter((map) => matchesGlob(map.replace(/\.map$/, ''), glob))
+                const commented = files.some((chunk) => chunk.sourceMappingURL)
+                const got = left.length === 0 ? (commented ? 'dangling' : 'deleted') : commented ? 'kept-visible' : 'kept-hidden'
+                if (got !== want) failures.push(`${tag}: maps under ${glob} ${got} (${left.slice(0, 3).join(', ') || 'none'}), expected ${want}`)
+            }
+        } else if (maps !== expected.maps) {
+            failures.push(`${tag}: maps ${maps} (${mapsLeft.slice(0, 4).join(', ') || 'none'}), expected ${expected.maps}`)
+        }
 
         if (release.chunks.length < 2) failures.push(`${tag}: expected an entry and a lazy chunk, found ${release.chunks.map((chunk) => chunk.file)}`)
         for (const chunk of judged) {

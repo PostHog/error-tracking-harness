@@ -143,9 +143,15 @@ function killGroup(child, signal) {
 async function runHttp({ fixture, work, env, log }) {
     const port = await availablePort()
     const origin = `http://127.0.0.1:${port}`
-    const child = spawn('sh', ['-c', `${fixture.runtime.start} -p ${port} -H 127.0.0.1`], {
+    // Frameworks take the port as flags (next start -p) or as variables (Nitro: PORT, HOST).
+    const { portEnv, hostEnv } = fixture.runtime
+    const command = portEnv ? fixture.runtime.start : `${fixture.runtime.start} -p ${port} -H 127.0.0.1`
+    const serverEnv = { ...env }
+    for (const name of portEnv ?? []) serverEnv[name] = String(port)
+    for (const name of hostEnv ?? []) serverEnv[name] = '127.0.0.1'
+    const child = spawn('sh', ['-c', command], {
         cwd: work,
-        env,
+        env: serverEnv,
         stdio: ['ignore', 'pipe', 'pipe'],
         detached: true,
     })

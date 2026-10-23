@@ -45,7 +45,8 @@ export function selectedPlugin(fixture, selection, subject) {
 }
 
 function copyTree(source, destination) {
-    const attempts = process.platform === 'darwin' ? [['cp', ['-Rc', source, destination]]] : [['cp', ['-Rl', source, destination]]]
+    // -P keeps symlinks as symlinks (GNU cp -l would otherwise hardlink what .bin shims point at).
+    const attempts = process.platform === 'darwin' ? [['cp', ['-RPc', source, destination]]] : [['cp', ['-RPl', source, destination]]]
     for (const [command, args] of attempts) {
         try {
             execFileSync(command, args, { stdio: 'pipe' })
