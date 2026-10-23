@@ -1,12 +1,66 @@
 {
-    "extends": "next",
+    "mode": "next",
     "bundler": "turbopack",
     "version": "16.3.8",
+    "plugin": "@posthog/nextjs-config",
+    "floorAlias": "posthog-nextjs-config-floor",
+    "dist": ".next",
+    "distGlobs": [
+        "static/chunks/**/*.js",
+        "server/**/*.js",
+        "static/chunks/**/*.map",
+        "server/**/*.map"
+    ],
+    "distIgnore": [
+        "static/chunks/polyfills-*.js",
+        "server/**/*-manifest.js",
+        "server/**/*_client-reference-manifest.js"
+    ],
+    "runtime": {
+        "kind": "http",
+        "start": "next start",
+        "paths": [
+            "/api/throw"
+        ],
+        "browser": {
+            "page": "/client",
+            "urlPrefix": "/_next/",
+            "root": ".next"
+        }
+    },
+    "cliSelection": "edges",
+    "throws": {
+        "entry": {
+            "file": "lib/boom.js",
+            "marker": "harness:throw:entry",
+            "type": "Error",
+            "value": "boom from entry chunk"
+        },
+        "lazy": {
+            "file": "lib/lazy.js",
+            "marker": "harness:throw:lazy",
+            "type": "LazyFailure",
+            "value": "lazy chunk failed with 3 values"
+        },
+        "browser-entry": {
+            "file": "lib/boom.js",
+            "marker": "harness:throw:entry",
+            "type": "Error",
+            "value": "boom from entry chunk"
+        },
+        "browser-lazy": {
+            "file": "lib/lazy.js",
+            "marker": "harness:throw:lazy",
+            "type": "LazyFailure",
+            "value": "lazy chunk failed with 3 values"
+        }
+    },
     "nodeModules": "copy",
     "optionalIds": [
         "static/chunks/**"
     ],
     "minCli": "0.18.11",
+    "immutable": "static/**",
     "volatileChunks": [
         "static/chunks/**",
         "server/chunks/ssr/app_client_*"
