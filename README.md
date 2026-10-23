@@ -81,7 +81,13 @@ A fixture with `"subject": false` (the pnpm-isolated layout, where the plugin's 
 under `.pnpm` and a tarball overlay cannot reach them) is skipped under `--plugins subject`.
 
 A fixture with `"mode": "next"` is a Next.js project (`fixtures/NEXT.md`): its `runtime` is an HTTP
-server the harness starts and requests, `distGlobs`/`distIgnore` pick the files under `.next` to
+server the harness starts and requests, then, with `runtime.browser`, a page it opens in Chromium
+against that server (`urlPrefix` and `root` map served URLs back to files). With `immutable`, a
+second release's browser is served the previous release's bytes for any matching asset that
+existed then, as a tab held open across a deploy sees them (posthog-js#5332); the page must still
+work and report the new release. Its throws are judged per name with `expect.eventsBy`, since the
+server and browser sides can behave differently. `distGlobs`/`distIgnore` pick the files under
+`.next` to judge, `distGlobs`/`distIgnore` pick the files under `.next` to
 judge, `volatileChunks` names the runtime chunks whose bytes change per release by design,
 `optionalIds` names files the bundler may emit without a map, and `cliSelection: edges` runs it
 against the oldest and newest CLI only. Files the CLI itself logged as skipped are exempt from the
@@ -143,6 +149,7 @@ lines to the `Dockerfile` and its name to `.github/workflows/run.yml`.
   into the release metadata.
 - `cliBinary: fixture` leaves `cliBinaryPath` unset so the plugin resolves the `@posthog/cli` the
   fixture installed; the case runs once per fixture, outside the matrix's CLI dimension.
+- `expect.eventsBy` overrides `events` for one throw by name; each value may itself be keyed by plugin.
 - `minCli` skips the case on older CLIs; `minPlugin`, keyed by plugin name, on older plugins.
 - `expect` values are a string, or an object keyed by plugin name since the plugins disagree on
   purpose: `build` green|fails, `cli` green|fails, `chunkIds` all|none, `maps`

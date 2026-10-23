@@ -67,14 +67,40 @@ function storedMatchesDisk(stored, disk, releaseIds, releaseId) {
 // invariants while the events still have to resolve.
 export function cliSkips(log, work) {
     const skipped = new Map()
+    const bySize = []
     // The CLI prints real paths; the workspace may be reached through a symlink (/var on macOS).
     const roots = [...new Set([work, realpathSync(work)])]
     for (const match of (log ?? '').matchAll(/Skipping (\/\S+?\.(?:[mc]?js)(?:\.map)?)(?::| because| -) ?([^\n]*)/g)) {
-        const absolute = match[1].replace(/\.map$/, '')
+        const named = match[1]
+        const absolute = named.replace(/\.map$/, '')
         const root = roots.find((candidate) => absolute.startsWith(candidate + path.sep))
-        if (root) skipped.set(path.relative(root, absolute), match[2].trim().slice(0, 160))
+        if (!root) continue
+        const reason = match[2].trim().slice(0, 160)
+        skipped.set(path.relative(root, absolute), reason)
+        // A map not named after its chunk (Turbopack): the line still says how big the chunk was.
+        const size = /sibling JS is (\d+) bytes/.exec(match[2])
+        if (named.endsWith('.map') && size) bySize.push({ dir: path.relative(root, path.dirname(named)), mapName: path.basename(named), size: Number(size[1]), reason })
     }
-    return skipped
+    return { skipped, bySize }
+}
+
+// Ties a chunk to the CLI's skip line for it: by its own path, by the map its sourceMappingURL
+// names, or, when --delete-after already stripped that comment, by the chunk size the skip line
+// reports (before or after the stripped comment line).
+const MAP_COMMENT = /^\/\/# sourceMappingURL=(\S+)\s*$/m
+function skipFor({ skipped, bySize }, work, absolute, code) {
+    const relative = path.relative(work, absolute)
+    const direct = skipped.get(relative)
+    if (direct) return direct
+    const mapName = MAP_COMMENT.exec(code)?.[1]
+    if (mapName && !/^(?:data:|https?:|\/\/)/.test(mapName)) {
+        const viaMap = skipped.get(path.relative(work, path.join(path.dirname(absolute), mapName.replace(/\.map$/, ''))))
+        if (viaMap) return viaMap
+    }
+    const size = Buffer.byteLength(code)
+    const dir = path.dirname(relative)
+    const match = bySize.find((entry) => entry.dir === dir && [0, 1, 2].some((extra) => entry.size === size + `//# sourceMappingURL=${entry.mapName}`.length + extra))
+    return match ? match.reason : null
 }
 
 export function collectDist(work, dist, fixture, log) {
@@ -95,7 +121,7 @@ export function collectDist(work, dist, fixture, log) {
             code,
             chunkId: CHUNK_ID_COMMENT.exec(code)?.[1] ?? null,
             sourceMappingURL: SOURCE_MAPPING_URL.test(code),
-            cliSkipped: skipped.get(path.relative(work, absolute)) ?? null,
+            cliSkipped: skipFor(skipped, work, absolute, code),
         })
     }
     return { chunks, mapsLeft }
@@ -172,7 +198,9 @@ export function collectEvents({ events, chunks, api, work, throws, served }) {
     const chunkOf = (frame) => {
         if (!frame?.filename) return undefined
         if (served && frame.filename.startsWith(served.origin + '/')) {
-            return byPath.get(path.join(served.root, decodeURIComponent(new URL(frame.filename).pathname)))
+            let pathname = decodeURIComponent(new URL(frame.filename).pathname)
+            if (served.strip && pathname.startsWith(served.strip)) pathname = pathname.slice(served.strip.length)
+            return byPath.get(path.join(served.root, pathname))
         }
         return byPath.get(path.resolve(work, frame.filename.replace(/^file:\/\//, '')))
     }

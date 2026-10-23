@@ -15,16 +15,19 @@
     "distIgnore": [
         "static/chunks/polyfills-*.js",
         "server/**/*-manifest.js",
-        "server/**/*_client-reference-manifest.js",
-        "static/chunks/app/**",
-        "static/chunks/next/dist/**"
+        "server/**/*_client-reference-manifest.js"
     ],
     "runtime": {
         "kind": "http",
         "start": "next start",
         "paths": [
             "/api/throw"
-        ]
+        ],
+        "browser": {
+            "page": "/client",
+            "urlPrefix": "/_next/",
+            "root": ".next"
+        }
     },
     "cliSelection": "edges",
     "throws": {
@@ -39,11 +42,29 @@
             "marker": "harness:throw:lazy",
             "type": "LazyFailure",
             "value": "lazy chunk failed with 3 values"
+        },
+        "browser-entry": {
+            "file": "lib/boom.js",
+            "marker": "harness:throw:entry",
+            "type": "Error",
+            "value": "boom from entry chunk"
+        },
+        "browser-lazy": {
+            "file": "lib/lazy.js",
+            "marker": "harness:throw:lazy",
+            "type": "LazyFailure",
+            "value": "lazy chunk failed with 3 values"
         }
     },
     "volatileChunks": [
         "static/chunks/webpack-*.js",
         "server/webpack-runtime.js",
-        "server/webpack-api-runtime.js"
+        "server/webpack-api-runtime.js",
+        "server/app/client/**"
+    ],
+    "immutable": "static/**",
+    "optionalIds": [
+        "static/chunks/app/**",
+        "static/chunks/next/dist/**"
     ]
 }

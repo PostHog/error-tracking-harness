@@ -12,6 +12,7 @@
 //   symbols:   all | none                         default all
 //   events:    resolved | unresolved | no-release  default resolved
 //   transport: PUT | POST                          how every symbol set reached the object store
+//   eventsBy:  { '<throw name>': <events value> } overrides `events` for one throw (e.g. the browser side)
 //   release:   { name, version }                   the release row the CLI created; version 'commit'
 //                                                  means the HEAD of the case's git checkout
 //   metadataFree: [string]                         text that must not appear in release metadata
@@ -147,7 +148,10 @@ export function judge(evidence, kase) {
             const detail = release.runtime.pageErrors?.length ? ` (page errors: ${release.runtime.pageErrors.slice(0, 2).join(' | ')})` : ''
             failures.push(`${tag}: the bundle exited with ${release.runtime.code}${detail}`)
         }
-        judgeEvents(release.events, { tag, expected: expected.events, mode, release, throws: evidence.throws, chunkIds: expected.chunkIds }, failures)
+        judgeEvents(release.events, { tag, expected: expected.events, mode, release: { ...release, plugin, bundler }, throws: evidence.throws, chunkIds: expected.chunkIds, eventsBy: expect.eventsBy }, failures)
+        // A second release served the first release's immutable assets to the browser; that only
+        // proves something if at least one was replayed.
+        if (index > 0 && evidence.fixture.immutable && release.runtime.replayed?.length === 0) failures.push(`${tag}: no previous-release asset was replayed to the browser`)
 
         if (index === 1 && expect.reuploads) {
             const count = expect.reuploads[`${plugin}:${bundler}`] ?? expect.reuploads[plugin]
@@ -164,16 +168,20 @@ export function judge(evidence, kase) {
         // chunks into which nextjs-config compiles the release id before hashing (posthog-js#5332).
         const volatile = evidence.fixture.volatileChunks ?? []
         const stable = (release) => release.chunks.filter((chunk) => !volatile.some((glob) => matchesGlob(chunk.file, glob)))
-        const [first, second] = green.map((release) => stable(release).map((chunk) => chunk.chunkId).sort())
-        const same = JSON.stringify(first) === JSON.stringify(second)
-        if (mode === 'event' && !same) failures.push('event mode: chunk ids changed between releases')
-        if (mode === 'symbol-set' && same) failures.push('symbol-set mode: chunk ids reused across releases')
+        // Compare the chunks both releases emitted under the same name. A bundler that names
+        // chunks by content hash renames what changed; those are reported, not judged.
+        const byName = (release) => new Map(stable(release).map((chunk) => [chunk.file, chunk.chunkId]))
+        const [first, second] = green.map(byName)
+        const shared = [...first.keys()].filter((file) => second.has(file))
+        const changed = shared.filter((file) => first.get(file) !== second.get(file))
+        if (mode === 'event' && changed.length) failures.push(`event mode: chunk ids changed between releases for ${changed.slice(0, 4).join(', ')}`)
+        if (mode === 'symbol-set' && shared.length && changed.length === 0) failures.push('symbol-set mode: chunk ids reused across releases')
         // Event mode uploads with force, so a later release can overwrite a symbol set an older
         // deployment still points at. Its exceptions must still resolve against what is stored now.
         if (evidence.afterFinalUpload && expected.events !== 'unresolved' && evidence.fixture.runtime !== 'none') {
             judgeEvents(
                 evidence.afterFinalUpload.events,
-                { tag: 'release 1 after the last upload', expected: expected.events, mode, release: green[0], throws: evidence.throws },
+                { tag: 'release 1 after the last upload', expected: expected.events, mode, release: { ...green[0], plugin, bundler }, throws: evidence.throws, eventsBy: expect.eventsBy },
                 failures
             )
         }
@@ -182,8 +190,9 @@ export function judge(evidence, kase) {
     return { ok: failures.length === 0, failures }
 }
 
-function judgeEvents(events, { tag, expected, mode, release, throws, chunkIds = 'all' }, failures) {
+function judgeEvents(events, { tag, expected: expectedAll, mode, release, throws, chunkIds = 'all', eventsBy = {} }, failures) {
     for (const name of Object.keys(throws)) {
+        const expected = pick(eventsBy[name], release.plugin ?? '', expectedAll, release.bundler ?? '')
         const event = events.find((candidate) => candidate.case === name)
         if (!event) {
             failures.push(`${tag}: no $exception for ${name}`)
