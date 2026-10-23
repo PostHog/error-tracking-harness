@@ -11,6 +11,9 @@ importers:
       next:
         specifier: 15.5.28
         version: 15.5.28(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      posthog-js:
+        specifier: 1.438.12
+        version: 1.438.12(react@19.2.8)
       posthog-node:
         specifier: 5.56.1
         version: 5.56.1
