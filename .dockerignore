@@ -1,0 +1,5 @@
+.git
+node_modules
+fixtures/*/node_modules
+fixtures/*/dist
+test-results

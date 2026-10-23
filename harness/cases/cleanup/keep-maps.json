@@ -1,0 +1,7 @@
+{
+    "description": "deleteAfterUpload: false keeps the maps next to the chunks and leaves the sourceMappingURL comment in place.",
+    "options": { "sourcemaps": { "releaseMode": "event", "deleteAfterUpload": false } },
+    "expect": {
+        "maps": "kept-visible"
+    }
+}

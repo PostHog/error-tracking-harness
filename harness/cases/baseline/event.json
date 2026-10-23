@@ -1,0 +1,20 @@
+{
+    "description": "Two releases in event mode: release ids travel in the chunks, symbol sets stay unbound, chunk ids are content-addressed and stable. From the supported CLI floor on, a new release re-uploads only chunks whose bytes changed for another reason: webpack's runtime chunk spells the lazy chunk name by concatenation, which the CLI does not strip; rollup and vite emit a literal import, which it does. Older plugins re-upload differently: @posthog/rollup-plugin 1.6.0 injects before Vite 8's Oxc minifier rewrites the snippet, so every chunk re-uploads; @posthog/webpack-plugin 1.7.0 let the CLI inject on disk, so none does.",
+    "options": {
+        "sourcemaps": {
+            "releaseMode": "event"
+        }
+    },
+    "releases": 2,
+    "expect": {
+        "reuploads": {
+            "minCli": "0.18.11",
+            "minPlugin": {
+                "@posthog/webpack-plugin": "1.7.1",
+                "@posthog/rollup-plugin": "1.6.1"
+            },
+            "@posthog/webpack-plugin": 1,
+            "@posthog/rollup-plugin": 0
+        }
+    }
+}

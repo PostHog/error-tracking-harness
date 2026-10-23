@@ -1,0 +1,58 @@
+name: Matrix
+
+on:
+    pull_request:
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+jobs:
+    image:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+            - uses: docker/setup-buildx-action@v3
+            - uses: docker/build-push-action@v6
+              with:
+                  context: .
+                  platforms: linux/amd64
+                  outputs: type=docker,dest=/tmp/image.tar
+                  tags: error-tracking-harness:pr
+                  cache-from: type=gha
+                  cache-to: type=gha,mode=max
+            - uses: actions/upload-artifact@v4
+              with:
+                  name: image
+                  path: /tmp/image.tar
+                  retention-days: 1
+
+    run:
+        needs: image
+        runs-on: ubuntu-latest
+        strategy:
+            fail-fast: false
+            matrix:
+                fixture: [webpack-5.112, rollup-4, vite-8]
+        steps:
+            - uses: actions/checkout@v4
+            - uses: actions/download-artifact@v4
+              with:
+                  name: image
+                  path: /tmp
+            - run: docker load --input /tmp/image.tar
+            - name: Run the matrix for ${{ matrix.fixture }}
+              run: |
+                  mkdir -p test-results
+                  docker run --rm --network none \
+                    -v "$PWD/test-results:/artifacts" \
+                    error-tracking-harness:pr \
+                    --artifacts /artifacts --fixtures ${{ matrix.fixture }} --plugins latest
+            - name: Report
+              if: always()
+              run: cat test-results/report.md >> "$GITHUB_STEP_SUMMARY"
+            - uses: actions/upload-artifact@v4
+              if: failure()
+              with:
+                  name: results-${{ matrix.fixture }}
+                  path: test-results

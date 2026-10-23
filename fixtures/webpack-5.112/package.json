@@ -1,0 +1,17 @@
+{
+    "name": "harness-webpack-5-112",
+    "private": true,
+    "packageManager": "pnpm@11.7.0",
+    "scripts": {
+        "build": "webpack"
+    },
+    "dependencies": {
+        "posthog-node": "5.56.1"
+    },
+    "devDependencies": {
+        "@posthog/webpack-plugin": "1.7.1",
+        "posthog-webpack-plugin-floor": "npm:@posthog/webpack-plugin@1.7.0",
+        "webpack": "5.112.0",
+        "webpack-cli": "6.0.1"
+    }
+}

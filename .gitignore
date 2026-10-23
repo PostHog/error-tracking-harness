@@ -1,0 +1,6 @@
+node_modules
+test-results
+.cache
+.DS_Store
+*/dist
+fixtures/*/dist
