@@ -43,9 +43,13 @@ function sameLayout(a, b) {
  * hash, so the stored copy may differ in those tokens while every column still lines up.
  */
 function storedMatchesDisk(stored, disk, releaseIds, releaseId) {
-    const normalized = releaseIds.reduce((source, previous) => source.replaceAll(previous, releaseId ?? previous), stored)
-    if (normalized === disk) return 'exact'
-    if (sameLayout(normalized, disk)) return 'layout'
+    // The CLI uploads a chunk before --delete-after strips its sourceMappingURL line, which is
+    // last in the file, so the stored copy may carry that one extra line without moving a position.
+    const withoutMapComment = (code) => code.replace(/^\/\/# sourceMappingURL=[^\n]*\n?/gm, '')
+    const normalized = withoutMapComment(releaseIds.reduce((source, previous) => source.replaceAll(previous, releaseId ?? previous), stored))
+    const onDisk = withoutMapComment(disk)
+    if (normalized === onDisk) return 'exact'
+    if (sameLayout(normalized, onDisk)) return 'layout'
     return 'differs'
 }
 
@@ -69,6 +73,21 @@ export function collectDist(work, dist) {
         })
     }
     return { chunks, mapsLeft }
+}
+
+/**
+ * Whether the CLI's on-disk rewrite kept every original byte. `pristine` maps file names to the
+ * bytes the bundler wrote; the rewritten chunk must still contain them, minus the
+ * sourceMappingURL line the CLI strips with --delete-after. A rewrite that keeps the original
+ * length while prepending a snippet (posthog#122580) fails this.
+ */
+export function collectInjection(pristine, chunks) {
+    return chunks.map((chunk) => {
+        const original = pristine[chunk.file]
+        if (original === undefined) return { file: chunk.file, intact: null }
+        const body = original.replace(/^\/\/# sourceMappingURL=[^\n]*\n?/gm, '')
+        return { file: chunk.file, intact: chunk.code.includes(body), grew: chunk.code.length - original.length }
+    })
 }
 
 export function collectSymbolSets(chunks, api, releaseIds, releaseId) {

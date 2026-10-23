@@ -52,7 +52,7 @@ export function loadCases(root, patterns) {
 
 export function pluginAtLeast(plugin, floors) {
     const floor = floors?.[plugin.name]
-    return !floor || compareVersions(plugin.version, floor) >= 0
+    return !floor || plugin.version === 'cli' || compareVersions(plugin.version, floor) >= 0
 }
 
 /** `plugins` maps a fixture name to the plugin that selection puts in place. */
@@ -62,6 +62,9 @@ export function planMatrix({ clis, fixtures, cases, plugins }) {
         for (const fixture of fixtures) {
             const plugin = plugins.get(fixture.name)
             for (const kase of cases) {
+                // A case is written for one kind of fixture: `plugin` (the bundler plugin injects and
+                // uploads) or `cli` (the harness runs posthog-cli on the built files).
+                if ((kase.mode ?? 'plugin') !== (fixture.mode ?? 'plugin')) continue
                 let skipped
                 if (!cliAtLeast(cli, kase.minCli)) skipped = `needs posthog-cli >= ${kase.minCli}`
                 else if (!pluginAtLeast(plugin, kase.minPlugin)) skipped = `needs ${plugin.name} >= ${kase.minPlugin[plugin.name]}`

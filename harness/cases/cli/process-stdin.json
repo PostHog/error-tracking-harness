@@ -1,0 +1,13 @@
+{
+    "mode": "cli",
+    "description": "sourcemap process --stdin with the file list the plugins pipe in (posthog#51885: inject found the pairs, upload found none).",
+    "options": {
+        "sourcemaps": {
+            "releaseMode": "event"
+        }
+    },
+    "cli": {
+        "command": "process",
+        "input": "stdin"
+    }
+}
