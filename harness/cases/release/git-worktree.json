@@ -1,0 +1,20 @@
+{
+    "description": "The build runs in a linked git worktree, where .git is a file pointing at the main repository (posthog#59107). The release must still derive from the checkout.",
+    "options": {
+        "sourcemaps": {
+            "releaseMode": "event",
+            "releaseName": null,
+            "releaseVersion": null
+        }
+    },
+    "git": {
+        "remote": "https://github.com/posthog/harness-app.git",
+        "worktree": true
+    },
+    "expect": {
+        "release": {
+            "name": "harness-app",
+            "version": "commit"
+        }
+    }
+}

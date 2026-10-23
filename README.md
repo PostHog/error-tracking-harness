@@ -106,11 +106,17 @@ lines to the `Dockerfile` and its name to `.github/workflows/run.yml`.
   Cloudflare R2), with a `status` and optional error `code`.
 - `server` shapes a healthy server: `presign: both | post-only` selects the upload URLs
   `bulk_start_upload` returns (older servers sent only the POST form; the CLI requires it).
+- `env` adds variables to the otherwise scrubbed build environment (CI metadata the CLI reads).
+- `git: { remote, worktree }` builds inside a git checkout made from the fixture, with that remote
+  URL, optionally as a linked worktree. The CLI derives a release from it and copies what it finds
+  into the release metadata.
 - `minCli` skips the case on older CLIs; `minPlugin`, keyed by plugin name, on older plugins.
 - `expect` values are a string, or an object keyed by plugin name since the plugins disagree on
   purpose: `build` green|fails, `chunkIds` all|none, `maps` deleted|kept-hidden|kept-visible,
   `symbols` all|none, `events` resolved|unresolved|no-release, `transport` PUT|POST, `reuploads`
-  chunk count per plugin for the second release, with its own `minCli` and `minPlugin`.
+  chunk count per plugin for the second release, with its own `minCli` and `minPlugin`,
+  `release: { name, version }` for the row the CLI created (`version: "commit"` is the checkout's
+  HEAD), and `metadataFree`, text that must not appear in the release metadata.
 
 Everything not named in `expect` is an invariant checked on every green release: each emitted chunk
 carries a chunk id; each id has a finished, decodable symbol set whose stored source lines up with

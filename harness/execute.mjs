@@ -1,6 +1,6 @@
 // Runs one cell of the matrix: build the fixture as its own process in a scrubbed environment,
 // run the bundle, and collect evidence. Nothing here decides pass or fail; see judge.mjs.
-import { spawn } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -47,6 +47,33 @@ function sandboxEnv(work, extra) {
     }
 }
 
+// A case can ask to build inside a git checkout (`git: { remote, worktree }`): the CLI derives
+// the release from it when the plugin passes no name or version, and copies what it finds into
+// the release metadata. The repository is created from the fixture copy; with `worktree` the
+// build runs in a linked worktree, where `.git` is a file rather than a directory.
+function createRepository(work, git) {
+    const run = (cwd, ...args) =>
+        execFileSync('git', args, {
+            cwd,
+            stdio: 'pipe',
+            env: { ...process.env, GIT_AUTHOR_NAME: 'Harness', GIT_AUTHOR_EMAIL: 'harness@example.com', GIT_COMMITTER_NAME: 'Harness', GIT_COMMITTER_EMAIL: 'harness@example.com', GIT_CONFIG_GLOBAL: '/dev/null' },
+        })
+            .toString()
+            .trim()
+    let repository = work
+    if (git.worktree) {
+        repository = `${work}-repository`
+        cpSync(work, repository, { recursive: true })
+        rmSync(work, { recursive: true, force: true })
+    }
+    run(repository, 'init', '-q', '-b', 'main')
+    if (git.remote) run(repository, 'remote', 'add', 'origin', git.remote)
+    run(repository, 'add', '-A')
+    run(repository, 'commit', '-q', '-m', 'Fixture')
+    if (git.worktree) run(repository, 'worktree', 'add', '-q', '-b', 'harness-worktree', work, 'main')
+    return { commit: run(work, 'rev-parse', 'HEAD'), worktree: Boolean(git.worktree), remote: git.remote ?? null }
+}
+
 // Case options override the defaults; a null deletes the key so a case can leave out a default.
 function mergeOptions(base, patch) {
     const merged = { ...base }
@@ -73,11 +100,13 @@ export async function executeCase({ cli, fixture, kase, selection, subject, outp
         case: kase.name,
         selection,
         throws: null,
+        git: null,
         releases: [],
         afterFinalUpload: null,
     }
     try {
         cpSync(fixture.dir, work, { recursive: true, filter: (source) => !/\/(node_modules|dist)(\/|$)/.test(source) })
+        if (kase.git) evidence.git = createRepository(work, kase.git)
         evidence.plugin = prepareNodeModules({ fixtureDir: fixture.dir, fixture, work, selection, subject })
         evidence.throws = expectedThrows(work, fixture)
         const dist = path.join(work, path.dirname(fixture.entry))
@@ -119,7 +148,11 @@ export async function executeCase({ cli, fixture, kase, selection, subject, outp
             if (existsSync(dist)) cpSync(dist, path.join(output, `${tag}-dist`), { recursive: true })
 
             const state = api.snapshot()
-            const release = state.releases.find((row) => row.project === RELEASE_NAME && row.version === releaseVersion) ?? null
+            // With no name and version from the plugin, the release is whatever the CLI derived.
+            const configured = options.sourcemaps?.releaseName !== undefined || options.sourcemaps?.releaseVersion !== undefined
+            const release = configured
+                ? (state.releases.find((row) => row.project === RELEASE_NAME && row.version === releaseVersion) ?? null)
+                : (state.releases.at(-1) ?? null)
             if (release) releaseIds.push(release.id)
             const { chunks, mapsLeft } = collectDist(work, dist)
             const entry = path.join(work, fixture.entry)
@@ -139,6 +172,7 @@ export async function executeCase({ cli, fixture, kase, selection, subject, outp
             evidence.releases.push({
                 releaseVersion,
                 releaseId: release?.id ?? null,
+                release: release && { name: release.project, version: release.version, metadata: release.metadata ?? {} },
                 build: { code: build.code, signal: build.signal, pluginError: PLUGIN_ERROR.test(build.output) },
                 chunks: chunks.map(({ code, absolute, ...chunk }) => chunk),
                 mapsLeft,
@@ -166,6 +200,7 @@ export async function executeCase({ cli, fixture, kase, selection, subject, outp
             delete release._events
         }
         writeFileSync(path.join(output, 'evidence.json'), JSON.stringify(evidence, null, 2))
+        if (evidence.git?.worktree) rmSync(`${work}-repository`, { recursive: true, force: true })
         return { evidence, work }
     } finally {
         await mock.stop()
