@@ -5,7 +5,8 @@
     "packageManager": "pnpm@11.7.0",
     "engines": { "node": ">=24" },
     "scripts": {
-        "install:fixtures": "for f in fixtures/*/; do (cd \"$f\" && pnpm install --frozen-lockfile --ignore-scripts); done",
+        "install:fixtures": "for f in fixtures/*/; do [ -f \"$f/package.json\" ] || continue; (cd \"$f\" && pnpm install --frozen-lockfile) || exit; done",
+        "check": "node --test harness/tests/*.test.mjs && node harness/check-fixtures.mjs",
         "list": "node harness/run.mjs --list",
         "test": "node harness/run.mjs"
     }

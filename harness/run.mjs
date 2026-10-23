@@ -34,19 +34,39 @@ const { values: args } = parseArgs({
 })
 const list = (value) => value?.split(',').map((item) => item.trim()).filter(Boolean)
 
+function saveSummary(artifacts, results, selection, seconds) {
+    const summary = {
+        seconds,
+        plugins: [...new Set(results.map((result) => result.plugin).filter(Boolean))].join(', ') || selection,
+        total: results.filter((result) => !result.skipped).length,
+        passed: results.filter((result) => result.ok && !result.skipped).length,
+        skipped: results.filter((result) => result.skipped).length,
+        results,
+    }
+    writeFileSync(path.join(artifacts, 'summary.json'), JSON.stringify(summary, null, 2))
+    writeFileSync(path.join(artifacts, 'report.md'), renderReport(summary))
+    console.log(`\n${summary.passed}/${summary.total} passed (${summary.skipped} skipped) in ${summary.seconds.toFixed(0)}s; report: ${path.join(artifacts, 'report.md')}`)
+    return summary.passed === summary.total
+}
+
 // The judge is pure, so a saved run can be judged again after a case changes.
 if (args['judge-only']) {
     const runDir = args['judge-only']
     const cases = new Map(loadCases(path.join(root, 'harness/cases')).map((kase) => [kase.name, kase]))
-    let failed = 0
-    for (const file of readdirSync(runDir, { recursive: true }).map(String).filter((file) => file.endsWith('evidence.json'))) {
+    const results = []
+    for (const file of readdirSync(runDir, { recursive: true }).map(String).filter((file) => path.basename(file) === 'evidence.json')) {
         const evidence = JSON.parse(readFileSync(path.join(runDir, file), 'utf8'))
-        const verdict = judge(evidence, cases.get(evidence.case))
+        const kase = cases.get(evidence.case)
+        if (!kase) throw new Error(`No current case for saved evidence ${evidence.case}`)
+        const verdict = judge(evidence, kase)
         writeFileSync(path.join(runDir, path.dirname(file), 'verdict.json'), JSON.stringify(verdict, null, 2))
         console.log(`${verdict.ok ? 'PASS' : 'FAIL'} ${evidence.cli.label}/${evidence.fixture.name}/${evidence.case}${verdict.ok ? '' : ': ' + verdict.failures[0]}`)
-        if (!verdict.ok) failed++
+        results.push({ cli: evidence.cli.label, fixture: evidence.fixture.name, case: evidence.case,
+            plugin: `${evidence.plugin.name}@${evidence.plugin.version}`, ...verdict,
+            reuploads: evidence.releases[1]?.uploadedChunkIds.length })
     }
-    process.exit(failed ? 1 : 0)
+    if (!results.length) throw new Error(`No evidence.json found in ${runDir}`)
+    process.exit(saveSummary(runDir, results, 'saved evidence', 0) ? 0 : 1)
 }
 
 // Baked binaries live in /opt/posthog-cli inside the image. Outside it, versions are fetched on
@@ -73,16 +93,17 @@ function ensureCli(version) {
     return { label: version, version, path: binary }
 }
 
-const clis = list(args.cli)?.map(ensureCli) ?? []
+const cliEntry = (version) => args.list ? { label: version, version, path: null } : ensureCli(version)
+const clis = list(args.cli)?.map(cliEntry) ?? []
 if (args['cli-binary']) {
     const binary = path.resolve(args['cli-binary'])
-    const reported = execFileSync(binary, ['--version'], { encoding: 'utf8' }).trim()
+    const reported = args.list ? 'not checked (list only)' : execFileSync(binary, ['--version'], { encoding: 'utf8' }).trim()
     clis.push({ label: 'custom', version: 'custom', reported, path: binary })
 }
 if (!clis.length) {
     const baked = existsSync(cliDir) ? readdirSync(cliDir).filter((name) => existsSync(path.join(cliDir, name, 'posthog-cli'))) : []
     const versions = baked.length ? baked : readFileSync(path.join(root, 'cli-versions.txt'), 'utf8').split(/\s+/).filter(Boolean)
-    clis.push(...versions.map(ensureCli))
+    clis.push(...versions.map(cliEntry))
 }
 
 let fixtures = loadFixtures(path.join(root, 'fixtures'), list(args.fixtures))
@@ -94,17 +115,23 @@ if (selection === 'subject') {
     fixtures = fixtures.filter(overlayable)
 }
 if (selection === 'subject' && !subject.size) throw new Error(`--plugins subject but no tarballs in ${args.subject}`)
-const plugins = new Map(fixtures.map((fixture) => [fixture.name, selectedPlugin(fixture, selection, subject)]))
-const matrix = planMatrix({ clis, fixtures, cases, plugins })
+if (!args.list) {
+    for (const fixture of fixtures) {
+        if (!existsSync(path.join(fixture.dir, 'node_modules'))) {
+            throw new Error(`${fixture.name}: dependencies are missing; run pnpm install:fixtures`)
+        }
+    }
+}
+const plugins = new Map(fixtures.map((fixture) => [fixture.name, selectedPlugin(fixture, selection, subject, { metadataOnly: args.list })]))
+const matrix = planMatrix({ clis, fixtures, cases, plugins, metadataOnly: args.list })
 
 if (args.list) {
     for (const entry of matrix) {
-        console.log(`${entry.cli.label}\t${entry.fixture.name} (${entry.plugin.name}@${entry.plugin.version})\t${entry.kase.name}${entry.skipped ? `\t(skipped: ${entry.skipped})` : ''}`)
+        console.log(`${entry.cli.label}\t${entry.fixture.name} (${entry.plugin.name}@${entry.plugin.version})\t${entry.kase.name}${entry.skipped ? `\t(skipped: ${entry.skipped})` : entry.cli.version === 'unknown' ? '\t(fixture CLI version checked at run time)' : ''}`)
     }
     console.log(`\n${matrix.filter((entry) => !entry.skipped).length} cells, plugins: ${selection}`)
     process.exit(0)
 }
-
 
 // Inside the image /artifacts is the caller's mount; outside, each run gets its own directory.
 const mounted = args.artifacts ?? (existsSync('/artifacts') ? '/artifacts' : undefined)
@@ -146,15 +173,4 @@ for (const entry of matrix) {
     console.log(`${result.ok ? 'PASS' : 'FAIL'} ${label}${result.ok ? '' : ': ' + result.failures[0]}`)
 }
 
-const summary = {
-    seconds: (Date.now() - started) / 1000,
-    plugins: [...new Set(results.map((result) => result.plugin).filter(Boolean))].join(', ') || selection,
-    total: results.filter((result) => !result.skipped).length,
-    passed: results.filter((result) => result.ok && !result.skipped).length,
-    skipped: results.filter((result) => result.skipped).length,
-    results,
-}
-writeFileSync(path.join(artifacts, 'summary.json'), JSON.stringify(summary, null, 2))
-writeFileSync(path.join(artifacts, 'report.md'), renderReport(summary))
-console.log(`\n${summary.passed}/${summary.total} passed (${summary.skipped} skipped) in ${summary.seconds.toFixed(0)}s; report: ${path.join(artifacts, 'report.md')}`)
-process.exit(summary.passed === summary.total ? 0 : 1)
+process.exit(saveSummary(artifacts, results, selection, (Date.now() - started) / 1000) ? 0 : 1)

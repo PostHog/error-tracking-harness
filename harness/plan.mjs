@@ -1,6 +1,8 @@
 // Enumerates the matrix: cli × fixture × case, minus the cases a CLI is too old for.
 import { readdirSync, readFileSync, existsSync } from 'node:fs'
 import path from 'node:path'
+import { compare } from './semver.mjs'
+import { validateCase, validateFixture } from './validate.mjs'
 
 /** The @posthog/cli package a fixture installed, which the plugins resolve when no path is given. */
 export function fixtureCli(fixture) {
@@ -13,18 +15,11 @@ export function fixtureCli(fixture) {
     return { label: 'fixture', version: 'unknown', path: null }
 }
 
-export function compareVersions(a, b) {
-    const left = a.split('.').map(Number)
-    const right = b.split('.').map(Number)
-    for (let index = 0; index < 3; index++) {
-        if ((left[index] ?? 0) !== (right[index] ?? 0)) return (left[index] ?? 0) - (right[index] ?? 0)
-    }
-    return 0
-}
+export const compareVersions = compare
 
 export function cliAtLeast(cli, floor) {
     // A custom binary has no version to compare; it is never skipped.
-    return !floor || cli.version === 'custom' || compareVersions(cli.version, floor) >= 0
+    return !floor || cli.version === 'custom' || (cli.version !== 'unknown' && compareVersions(cli.version, floor) >= 0)
 }
 
 /** Fixtures a tarball overlay cannot reach (pnpm-isolated layouts) are skipped under --plugins subject. */
@@ -38,7 +33,12 @@ export function loadFixtures(root, filter) {
         const file = path.join(root, name, 'fixture.json')
         if (!existsSync(file)) continue
         if (filter && !filter.includes(name)) continue
-        fixtures.push({ name, dir: path.join(root, name), ...JSON.parse(readFileSync(file, 'utf8')) })
+        const config = JSON.parse(readFileSync(file, 'utf8'))
+        const defaults = config.extends ? JSON.parse(readFileSync(path.join(root, '_defaults', `${config.extends}.json`), 'utf8')) : {}
+        const { extends: _extends, ...fields } = config
+        const fixture = { ...defaults, ...fields }
+        validateFixture(fixture, name)
+        fixtures.push({ ...fixture, name, dir: path.join(root, name) })
     }
     if (filter) {
         for (const name of filter) if (!fixtures.some((fixture) => fixture.name === name)) throw new Error(`Unknown fixture ${name}`)
@@ -57,7 +57,9 @@ export function loadCases(root, patterns) {
             else if (entry.name.endsWith('.json')) {
                 const name = path.relative(root, file).slice(0, -'.json'.length).split(path.sep).join('/')
                 if (globs && !globs.some((glob) => path.matchesGlob(name, glob))) continue
-                cases.push({ name, ...JSON.parse(readFileSync(file, 'utf8')) })
+                const config = JSON.parse(readFileSync(file, 'utf8'))
+                validateCase(config, name)
+                cases.push({ name, ...config })
             }
         }
     }
@@ -83,7 +85,7 @@ function clisFor(fixture, clis) {
     return [...new Set([versioned[0], versioned.at(-1), ...custom].filter(Boolean))]
 }
 
-export function planMatrix({ clis, fixtures, cases, plugins }) {
+export function planMatrix({ clis, fixtures, cases, plugins, metadataOnly = false }) {
     const entries = []
     for (const cli of clis) {
         for (const fixture of fixtures) {
@@ -97,8 +99,8 @@ export function planMatrix({ clis, fixtures, cases, plugins }) {
                 // the CLI the fixture installed. The matrix's CLI dimension does not apply: one cell.
                 if (kase.cliBinary === 'fixture') {
                     if (cli !== clis[0]) continue
-                    const own = fixtureCli(fixture)
-                    const skipped = cliAtLeast(own, kase.minCli) ? undefined : `fixture ships posthog-cli ${own.version}, needs >= ${kase.minCli}`
+                    const own = metadataOnly ? { label: 'fixture', version: 'unknown', path: null } : fixtureCli(fixture)
+                    const skipped = metadataOnly || cliAtLeast(own, kase.minCli) ? undefined : `fixture ships posthog-cli ${own.version}, needs >= ${kase.minCli}`
                     entries.push({ cli: own, fixture, kase, plugin, skipped })
                     continue
                 }

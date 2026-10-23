@@ -14,7 +14,21 @@ export function compare(a, b) {
     if (left.prerelease === right.prerelease) return 0
     if (!left.prerelease) return 1
     if (!right.prerelease) return -1
-    return left.prerelease < right.prerelease ? -1 : 1
+    const leftParts = left.prerelease.split('.')
+    const rightParts = right.prerelease.split('.')
+    for (let index = 0; index < Math.max(leftParts.length, rightParts.length); index++) {
+        if (leftParts[index] === undefined) return -1
+        if (rightParts[index] === undefined) return 1
+        const a = leftParts[index]
+        const b = rightParts[index]
+        if (a === b) continue
+        const aNumeric = /^\d+$/.test(a)
+        const bNumeric = /^\d+$/.test(b)
+        if (aNumeric && bNumeric) return Number(a) - Number(b)
+        if (aNumeric !== bNumeric) return aNumeric ? -1 : 1
+        return a < b ? -1 : 1
+    }
+    return 0
 }
 
 // One comparator set: every predicate must hold.
