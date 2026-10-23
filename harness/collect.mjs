@@ -165,11 +165,17 @@ export function collectSymbolSets(chunks, api, releaseIds, releaseId) {
 }
 
 /** Resolves every captured exception against the chunks on disk and the symbol sets in `api`. */
-export function collectEvents({ events, chunks, api, work, throws }) {
+export function collectEvents({ events, chunks, api, work, throws, served }) {
     const byPath = new Map(chunks.map((chunk) => [chunk.absolute, chunk]))
-    // posthog-node reports paths relative to the cwd; ESM frames arrive as file:// URLs.
-    const chunkOf = (frame) =>
-        frame?.filename ? byPath.get(path.resolve(work, frame.filename.replace(/^file:\/\//, ''))) : undefined
+    // posthog-node reports paths relative to the cwd; ESM frames arrive as file:// URLs; a browser
+    // reports the URL the chunk was served from, which maps back into the served directory.
+    const chunkOf = (frame) => {
+        if (!frame?.filename) return undefined
+        if (served && frame.filename.startsWith(served.origin + '/')) {
+            return byPath.get(path.join(served.root, decodeURIComponent(new URL(frame.filename).pathname)))
+        }
+        return byPath.get(path.resolve(work, frame.filename.replace(/^file:\/\//, '')))
+    }
     return events
         .filter((event) => event.event === '$exception')
         .map((event) => {

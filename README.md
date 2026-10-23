@@ -46,6 +46,7 @@ Arguments narrow the matrix: `--cli 0.18.11,0.18.12`, `--fixtures vite-8`, `--ca
 Without Docker, from a checkout (CLIs are fetched into `~/.cache/error-tracking-harness` on demand):
 
 ```sh
+pnpm install && pnpm install:browser   # Playwright and its Chromium, for the browser fixtures
 pnpm install:fixtures
 node harness/run.mjs --cli 0.18.11
 ```
@@ -91,11 +92,13 @@ A fixture with `"mode": "nuxt"` is a Nuxt project: `@posthog/nuxt` runs posthog-
 is the Nitro server (`node .output/server/index.mjs`), addressed through `PORT`/`HOST` variables
 (`runtime.portEnv`, `runtime.hostEnv`); Nitro's traced `server/node_modules` is left out.
 
-A fixture with `"integrity": "<built html>"` is a browser build whose HTML carries Subresource
+A fixture with `"runtime": { "kind": "browser", "serve", "page" }` is a browser build: the harness
+serves the built directory, opens the page in headless Chromium with the mock's origin as `?host=`,
+and waits for the bundled posthog-js to capture the exceptions. Frames arrive as URLs and map back
+into the served directory. A fixture with `"integrity": "<built html>"` also carries Subresource
 Integrity hashes (`vite-plugin-sri3`, `webpack-subresource-integrity`): every `integrity` attribute
-must match the served bytes, which fails if anything rewrote a chunk after the SRI plugin hashed it.
-Such fixtures have `"runtime": { "kind": "none" }` until a browser runtime exists, so the exception
-checks are skipped there.
+must match the served bytes, and Chromium refuses a script whose hash does not, so a rewrite after
+the SRI plugin hashed a chunk shows up twice. `"runtime": { "kind": "none" }` skips the runtime.
 
 A fixture with `"mode": "cli"` has no plugin: it builds plain output with source maps and the
 harness runs `posthog-cli sourcemap process | inject | upload` on it afterwards, the way a user
