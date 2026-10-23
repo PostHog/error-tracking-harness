@@ -1,0 +1,10 @@
+minimumReleaseAge: 10080
+nodeLinker: hoisted
+# The CLI package downloads its binary in postinstall; the plugins resolve it from node_modules/.bin.
+allowBuilds:
+    "@posthog/cli": true
+    core-js: false
+    esbuild: false
+    "@parcel/watcher": false
+    unrs-resolver: false
+strictDepBuilds: false

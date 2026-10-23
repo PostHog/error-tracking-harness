@@ -1,0 +1,52 @@
+{
+    "mode": "nuxt",
+    "bundler": "nitro",
+    "version": "4.6.1",
+    "plugin": "@posthog/nuxt",
+    "floorAlias": "posthog-nuxt-floor",
+    "minCli": "0.18.0",
+    "dist": ".output",
+    "distGlobs": [
+        "public/_nuxt/**/*.js",
+        "server/**/*.mjs",
+        "public/_nuxt/**/*.map",
+        "server/**/*.map"
+    ],
+    "distIgnore": [
+        "server/node_modules/**"
+    ],
+    "runtime": {
+        "kind": "http",
+        "start": "node .output/server/index.mjs",
+        "portEnv": [
+            "PORT",
+            "NITRO_PORT"
+        ],
+        "hostEnv": [
+            "HOST",
+            "NITRO_HOST"
+        ],
+        "paths": [
+            "/api/throw"
+        ]
+    },
+    "cliSelection": "edges",
+    "throws": {
+        "entry": {
+            "file": "lib/boom.js",
+            "marker": "harness:throw:entry",
+            "type": "Error",
+            "value": "boom from entry chunk"
+        },
+        "lazy": {
+            "file": "lib/lazy.js",
+            "marker": "harness:throw:lazy",
+            "type": "LazyFailure",
+            "value": "lazy chunk failed with 3 values"
+        }
+    },
+    "volatileChunks": [
+        "server/chunks/nitro/nitro.mjs",
+        "server/chunks/virtual/styles.mjs"
+    ]
+}
