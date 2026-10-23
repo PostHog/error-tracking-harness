@@ -29,7 +29,7 @@ docker run --rm --network none \
 docker run --rm --network none -v "$PWD/test-results:/artifacts" ghcr.io/posthog/error-tracking-harness:latest
 ```
 
-Arguments narrow the matrix: `--cli 0.18.11,0.18.12`, `--fixtures vite-8`, `--cases 'upload/*'`,
+Arguments narrow the matrix: `--cli 0.18.11,0.18.12`, `--fixtures vite-8`, `--cases 'baseline/*,upload/start-500'`,
 `--plugins floor|latest|subject`. `--list` prints the cells without running them.
 `--judge-only <run dir>` judges saved evidence again after a case changed.
 

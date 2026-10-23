@@ -30,7 +30,9 @@ export function loadFixtures(root, filter) {
     return fixtures
 }
 
-export function loadCases(root, pattern) {
+/** `patterns` is a comma-separated list of globs over case names, e.g. `baseline/*,upload/start-500`. */
+export function loadCases(root, patterns) {
+    const globs = patterns?.split(',').map((item) => item.trim()).filter(Boolean)
     const cases = []
     const visit = (dir) => {
         for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
@@ -38,12 +40,13 @@ export function loadCases(root, pattern) {
             if (entry.isDirectory()) visit(file)
             else if (entry.name.endsWith('.json')) {
                 const name = path.relative(root, file).slice(0, -'.json'.length).split(path.sep).join('/')
-                if (pattern && !path.matchesGlob(name, pattern)) continue
+                if (globs && !globs.some((glob) => path.matchesGlob(name, glob))) continue
                 cases.push({ name, ...JSON.parse(readFileSync(file, 'utf8')) })
             }
         }
     }
     visit(root)
+    if (!cases.length) throw new Error(`No case matches ${patterns}`)
     return cases
 }
 

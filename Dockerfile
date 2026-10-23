@@ -30,5 +30,5 @@ COPY harness harness
 COPY fixtures fixtures
 
 ENV HARNESS_CLI_DIR=/opt/posthog-cli
+# /subject and /artifacts are picked up when mounted; arguments narrow the matrix (see README).
 ENTRYPOINT ["node", "/rig/harness/run.mjs"]
-CMD ["--subject", "/subject", "--artifacts", "/artifacts"]

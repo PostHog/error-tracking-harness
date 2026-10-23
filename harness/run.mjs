@@ -4,7 +4,8 @@
 //   node harness/run.mjs [--cli 0.18.11,0.18.12] [--cli-binary /path/to/posthog-cli]
 //                        [--fixtures webpack-5.112,vite-8] [--cases 'baseline/*']
 //                        [--plugins floor|latest|subject] [--subject /subject]
-//                        [--artifacts /artifacts] [--list] [--judge-only <run dir>]
+//                        [--artifacts dir] [--list] [--judge-only <run dir>]
+// Inside the image, /subject and /artifacts are picked up when mounted; no arguments runs everything.
 import { parseArgs } from 'node:util'
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
@@ -101,9 +102,11 @@ if (args.list) {
 }
 
 
-const artifactRoot = args.artifacts ?? path.join(root, 'test-results')
+// Inside the image /artifacts is the caller's mount; outside, each run gets its own directory.
+const mounted = args.artifacts ?? (existsSync('/artifacts') ? '/artifacts' : undefined)
+const artifactRoot = mounted ?? path.join(root, 'test-results')
 mkdirSync(artifactRoot, { recursive: true })
-const artifacts = args.artifacts ? artifactRoot : mkdtempSync(path.join(artifactRoot, 'run-'))
+const artifacts = mounted ? artifactRoot : mkdtempSync(path.join(artifactRoot, 'run-'))
 console.log(`artifacts: ${artifacts}\nplugins: ${selection}\ncli: ${clis.map((cli) => cli.label).join(', ')}`)
 const started = Date.now()
 const results = []
