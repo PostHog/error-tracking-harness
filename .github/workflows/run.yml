@@ -24,7 +24,10 @@ jobs:
             - name: Check harness tests and fixture coverage
               run: |
                   docker load --input /tmp/image.tar
-                  docker run --rm --entrypoint sh error-tracking-harness:pr \
+                  docker run --rm --entrypoint sh \
+                    -v "$PWD/Dockerfile:/rig/Dockerfile:ro" \
+                    -v "$PWD/.github:/rig/.github:ro" \
+                    error-tracking-harness:pr \
                     -c 'node --test harness/tests/*.test.mjs && node harness/check-fixtures.mjs'
             - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
               with:
