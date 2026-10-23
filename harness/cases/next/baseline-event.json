@@ -1,0 +1,20 @@
+{
+    "mode": "next",
+    "description": "Two production builds as successive releases in event mode. The webpack path injects chunk ids and the release into every client and server chunk before hashing; the Turbopack path uses native debug ids and uploads from runAfterProductionCompile. A Pages API route captures two exceptions server-side through an externalized posthog-node; both must resolve to their source lines and carry the release. On the Turbopack path the release reaches neither an externalized posthog-node nor a CDN posthog-js: no runtime module sets _posthogReleaseId there, so server exceptions resolve but carry no release.",
+    "options": {
+        "sourcemaps": {
+            "releaseMode": "event"
+        }
+    },
+    "releases": 2,
+    "expect": {
+        "maps": {
+            "@posthog/nextjs-config": "deleted",
+            "@posthog/nextjs-config:turbopack": "dangling"
+        },
+        "events": {
+            "@posthog/nextjs-config": "resolved",
+            "@posthog/nextjs-config:turbopack": "no-release"
+        }
+    }
+}

@@ -72,10 +72,22 @@ export function pluginAtLeast(plugin, floors) {
 }
 
 /** `plugins` maps a fixture name to the plugin that selection puts in place. */
+// Slow fixtures (framework builds) run against the oldest and newest CLI only.
+function clisFor(fixture, clis) {
+    if (fixture.cliSelection !== 'edges' || clis.length <= 2) return clis
+    // Among the CLIs the fixture accepts, the oldest and the newest.
+    const versioned = clis
+        .filter((cli) => cli.version !== 'custom' && cliAtLeast(cli, fixture.minCli))
+        .sort((a, b) => compareVersions(a.version, b.version))
+    const custom = clis.filter((cli) => cli.version === 'custom')
+    return [...new Set([versioned[0], versioned.at(-1), ...custom].filter(Boolean))]
+}
+
 export function planMatrix({ clis, fixtures, cases, plugins }) {
     const entries = []
     for (const cli of clis) {
         for (const fixture of fixtures) {
+            if (!clisFor(fixture, clis).includes(cli)) continue
             const plugin = plugins.get(fixture.name)
             for (const kase of cases) {
                 // A case is written for one kind of fixture: `plugin` (the bundler plugin injects and
@@ -92,7 +104,10 @@ export function planMatrix({ clis, fixtures, cases, plugins }) {
                 }
                 let skipped
                 if (!cliAtLeast(cli, kase.minCli)) skipped = `needs posthog-cli >= ${kase.minCli}`
+                else if (fixture.minCli && !cliAtLeast(cli, fixture.minCli)) skipped = `fixture needs posthog-cli >= ${fixture.minCli}`
                 else if (!pluginAtLeast(plugin, kase.minPlugin)) skipped = `needs ${plugin.name} >= ${kase.minPlugin[plugin.name]}`
+                // A fixture can need a plugin version for every case (a published plugin mishandles it).
+                else if (fixture.minPlugin && !pluginAtLeast(plugin, { [plugin.name]: fixture.minPlugin })) skipped = `fixture needs ${plugin.name} >= ${fixture.minPlugin}`
                 entries.push({ cli, fixture, kase, plugin, skipped })
             }
         }

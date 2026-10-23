@@ -75,8 +75,24 @@ function decodeMappings(mappings) {
     return lines
 }
 
-/** Resolves a 1-based line and column, as SDK frames carry them, to the original position. */
+/**
+ * Resolves a 1-based line and column, as SDK frames carry them, to the original position. Handles
+ * index maps (`sections` with generated offsets, as Turbopack emits) by picking the section that
+ * covers the position and resolving inside it with the offset removed.
+ */
 export function originalPosition(map, lineno, colno) {
+    if (Array.isArray(map.sections)) {
+        let section
+        for (const candidate of map.sections) {
+            const { line, column } = candidate.offset
+            if (line < lineno - 1 || (line === lineno - 1 && column <= colno - 1)) section = candidate
+            else break
+        }
+        if (!section) return undefined
+        const { line, column } = section.offset
+        return originalPosition(section.map, lineno - line, line === lineno - 1 ? colno - column : colno)
+    }
+    if (typeof map.mappings !== 'string') return undefined
     const segments = decodeMappings(map.mappings)[lineno - 1] ?? []
     let found
     for (const segment of segments) {
