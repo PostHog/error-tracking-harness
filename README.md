@@ -86,6 +86,11 @@ judge, `volatileChunks` names the runtime chunks whose bytes change per release 
 against the oldest and newest CLI only. Files the CLI itself logged as skipped are exempt from the
 id and symbol-set invariants.
 
+A fixture with `"mode": "nuxt"` is a Nuxt project: `@posthog/nuxt` runs posthog-cli on disk over
+`.output/public` before Nitro writes its manifest and over `.output/server` at close. Its runtime
+is the Nitro server (`node .output/server/index.mjs`), addressed through `PORT`/`HOST` variables
+(`runtime.portEnv`, `runtime.hostEnv`); Nitro's traced `server/node_modules` is left out.
+
 A fixture with `"mode": "cli"` has no plugin: it builds plain output with source maps and the
 harness runs `posthog-cli sourcemap process | inject | upload` on it afterwards, the way a user
 without a bundler plugin does (and the way `@posthog/nuxt` and Turbopack builds do). Cases carry

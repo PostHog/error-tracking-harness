@@ -1,0 +1,15 @@
+{
+    "mode": "nuxt",
+    "description": "deleteAfterUpload: false keeps every map. The module asks Nuxt for hidden maps, which the client build honours; Nitro still writes sourceMappingURL comments into the server chunks.",
+    "options": {
+        "sourcemaps": {
+            "deleteAfterUpload": false
+        }
+    },
+    "expect": {
+        "mapsBy": {
+            "public/**": "kept-hidden",
+            "server/**": "kept-visible"
+        }
+    }
+}

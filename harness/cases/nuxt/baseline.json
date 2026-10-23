@@ -1,0 +1,8 @@
+{
+    "mode": "nuxt",
+    "description": "Two production builds as successive releases. @posthog/nuxt injects and uploads the public assets before Nitro writes its manifest, then the server bundle in the close hook, both through posthog-cli on disk in its default (event) release mode. A Nitro route captures two exceptions through posthog-node; both must resolve and carry the release injected into the server chunks. Nitro writes each public asset's etag and mtime into nitro.mjs and does not order its virtual styles module deterministically, so those two chunks may change per build; every other chunk keeps its id.",
+    "options": {
+        "sourcemaps": {}
+    },
+    "releases": 2
+}
