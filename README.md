@@ -102,12 +102,15 @@ lines to the `Dockerfile` and its name to `.github/workflows/run.yml`.
   and version); `null` removes a default.
 - `releases` builds the fixture that many times as successive releases.
 - `fault` makes the mock API misbehave: `auth`, `releases`, `bulk_check_upload`, `bulk_start_upload`,
-  `bulk_finish_upload`, `object_store`, with a `status` and optional error `code`.
+  `bulk_finish_upload`, `object_store`, `object_store_post` (only the presigned POST fails, as on
+  Cloudflare R2), with a `status` and optional error `code`.
+- `server` shapes a healthy server: `presign: both | post-only` selects the upload URLs
+  `bulk_start_upload` returns (older servers sent only the POST form; the CLI requires it).
 - `minCli` skips the case on older CLIs; `minPlugin`, keyed by plugin name, on older plugins.
 - `expect` values are a string, or an object keyed by plugin name since the plugins disagree on
-  purpose: `build` green|fails, `maps` deleted|kept-hidden|kept-visible, `symbols` all|none,
-  `events` resolved|unresolved|no-release, `reuploads` chunk count per plugin for the second
-  release, with its own `minCli`.
+  purpose: `build` green|fails, `chunkIds` all|none, `maps` deleted|kept-hidden|kept-visible,
+  `symbols` all|none, `events` resolved|unresolved|no-release, `transport` PUT|POST, `reuploads`
+  chunk count per plugin for the second release, with its own `minCli` and `minPlugin`.
 
 Everything not named in `expect` is an invariant checked on every green release: each emitted chunk
 carries a chunk id; each id has a finished, decodable symbol set whose stored source lines up with

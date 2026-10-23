@@ -1,0 +1,30 @@
+{
+    "description": "Event mode and the release cannot be created (the API answers 500). The webpack plugin aborts injection: no chunk ids, no upload, maps deleted, build green. The rollup plugin fails the build in renderChunk.",
+    "options": {
+        "sourcemaps": {
+            "releaseMode": "event"
+        }
+    },
+    "fault": {
+        "api": "releases",
+        "status": 500
+    },
+    "minPlugin": {
+        "@posthog/webpack-plugin": "1.7.4"
+    },
+    "expect": {
+        "build": {
+            "@posthog/webpack-plugin": "green",
+            "@posthog/rollup-plugin": "fails"
+        },
+        "chunkIds": {
+            "@posthog/webpack-plugin": "none"
+        },
+        "maps": {
+            "@posthog/webpack-plugin": "deleted",
+            "@posthog/rollup-plugin": "kept-hidden"
+        },
+        "symbols": "none",
+        "events": "unresolved"
+    }
+}

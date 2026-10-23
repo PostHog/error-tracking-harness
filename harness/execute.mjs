@@ -62,7 +62,7 @@ function mergeOptions(base, patch) {
 export async function executeCase({ cli, fixture, kase, selection, subject, output }) {
     mkdirSync(output, { recursive: true })
     const work = mkdtempSync(path.join(tmpdir(), 'error-tracking-harness-'))
-    const api = createErrorTrackingApi({ apiKey: API_KEY, projectId: PROJECT_ID, fault: kase.fault })
+    const api = createErrorTrackingApi({ apiKey: API_KEY, projectId: PROJECT_ID, fault: kase.fault, server: kase.server })
     await api.start()
     const mock = createMockServer({ adapter: (request) => api.route(request) })
     const host = await mock.start()
