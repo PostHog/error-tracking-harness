@@ -3,8 +3,10 @@
 //
 // `expect` vocabulary (each value may be a string, or an object keyed by plugin name):
 //   build:     green | fails                      default green
+//   cli:       green | fails                      default green; cli-mode fixtures only
 //   chunkIds:  all | none                         default all (none: injection never ran)
-//   maps:      deleted | kept-hidden | kept-visible  default deleted
+//   maps:      deleted | dangling | kept-hidden | kept-visible  default deleted
+//              (dangling: maps gone but a sourceMappingURL comment still points at them)
 //   symbols:   all | none                         default all
 //   events:    resolved | unresolved | no-release  default resolved
 //   transport: PUT | POST                          how every symbol set reached the object store
@@ -27,6 +29,7 @@ export function judge(evidence, kase) {
     const expect = kase.expect ?? {}
     const expected = {
         build: pick(expect.build, plugin, 'green'),
+        cli: pick(expect.cli, plugin, 'green'),
         chunkIds: pick(expect.chunkIds, plugin, 'all'),
         maps: pick(expect.maps, plugin, 'deleted'),
         symbols: pick(expect.symbols, plugin, 'all'),
@@ -42,13 +45,22 @@ export function judge(evidence, kase) {
         if (build === 'fails') return
         green.push(release)
 
+        if (release.cli) {
+            const cli = release.cli.every((step) => step.code === 0) ? 'green' : 'fails'
+            if (cli !== expected.cli) failures.push(`${tag}: posthog-cli ${cli} (${release.cli.map((step) => `${step.args[1]}→${step.code}`).join(', ')}), expected ${expected.cli}`)
+        }
+        if (release.injection && expected.chunkIds === 'all') {
+            for (const file of release.injection) {
+                if (file.intact === false) failures.push(`${tag}: the CLI rewrote ${file.file} and lost original bytes (size change ${file.grew})`)
+            }
+        }
         if (expected.symbols === 'all' && release.build.pluginError) {
             failures.push(`${tag}: the plugin reported an error in the build log`)
         }
         if (release.mockErrors.length) failures.push(`${tag}: mock errors: ${release.mockErrors.join('; ')}`)
 
-        const maps =
-            release.mapsLeft.length === 0 ? 'deleted' : release.chunks.some((chunk) => chunk.sourceMappingURL) ? 'kept-visible' : 'kept-hidden'
+        const comments = release.chunks.some((chunk) => chunk.sourceMappingURL)
+        const maps = release.mapsLeft.length === 0 ? (comments ? 'dangling' : 'deleted') : comments ? 'kept-visible' : 'kept-hidden'
         if (maps !== expected.maps) failures.push(`${tag}: maps ${maps} (${release.mapsLeft.join(', ') || 'none'}), expected ${expected.maps}`)
 
         if (release.chunks.length < 2) failures.push(`${tag}: expected an entry and a lazy chunk, found ${release.chunks.map((chunk) => chunk.file)}`)

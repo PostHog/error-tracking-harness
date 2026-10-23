@@ -31,6 +31,8 @@ function installedVersion(nodeModules, name) {
 
 /** The plugin version a selection would put in place, known before anything is built. */
 export function selectedPlugin(fixture, selection, subject) {
+    // A cli-mode fixture has no plugin; the CLI under test is the matrix's own dimension.
+    if (!fixture.plugin) return { name: 'posthog-cli', version: 'cli' }
     const installed = path.join(fixture.dir, 'node_modules')
     if (selection === 'subject') {
         const entry = subject.get(fixture.plugin)
@@ -66,9 +68,9 @@ export function prepareNodeModules({ fixtureDir, fixture, work, selection, subje
         }
     }
 
-    const pluginPath = path.join(nodeModules, fixture.plugin)
+    const pluginPath = fixture.plugin ? path.join(nodeModules, fixture.plugin) : null
     let source = 'latest'
-    if (selection === 'floor') {
+    if (selection === 'floor' && pluginPath) {
         rmSync(pluginPath)
         link(path.join(installed, fixture.floorAlias), pluginPath)
         source = 'floor'
@@ -91,12 +93,13 @@ export function prepareNodeModules({ fixtureDir, fixture, work, selection, subje
             execFileSync('tar', ['-xzf', tarball, '--strip-components=1', '-C', destination])
             overlaid.push(`${name}@${manifest.version}`)
         }
-        if (!overlaid.some((item) => item.startsWith(`${fixture.plugin}@`))) {
+        if (fixture.plugin && !overlaid.some((item) => item.startsWith(`${fixture.plugin}@`))) {
             throw new Error(`subject has no tarball for ${fixture.plugin}`)
         }
         source = `subject (${overlaid.join(', ')})`
     }
 
+    if (!pluginPath) return { name: 'posthog-cli', version: 'cli', source }
     const manifest = JSON.parse(readFileSync(path.join(pluginPath, 'package.json'), 'utf8'))
     return { name: manifest.name, version: manifest.version, source }
 }

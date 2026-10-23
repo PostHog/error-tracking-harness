@@ -1,0 +1,15 @@
+{
+    "mode": "cli",
+    "description": "The bundler emitted hidden maps (no sourceMappingURL): the CLI pairs each chunk with its sibling .map and processes them.",
+    "options": {
+        "sourcemaps": {
+            "releaseMode": "event"
+        }
+    },
+    "cli": {
+        "command": "process"
+    },
+    "env": {
+        "POSTHOG_HARNESS_SOURCEMAP": "hidden"
+    }
+}

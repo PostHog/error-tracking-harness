@@ -7,16 +7,17 @@ import path from 'node:path'
 import { createMockServer } from './mock-server.mjs'
 import { createErrorTrackingApi } from './mock-api.mjs'
 import { prepareNodeModules } from './subject.mjs'
-import { collectDist, collectEvents, collectSymbolSets, expectedThrows } from './collect.mjs'
+import { collectDist, collectEvents, collectInjection, collectSymbolSets, expectedThrows, listDist } from './collect.mjs'
 
 const API_KEY = 'phx_harness_personal_key'
 const PROJECT_ID = '4242'
 const RELEASE_NAME = 'harness-app'
 const PLUGIN_ERROR = /Error injecting PostHog|Error running PostHog|release resolve failed|Command failed with code|ERROR posthog_cli|panicked/
 
-function run(command, args, { cwd, env, log, timeout = 180_000 }) {
+function run(command, args, { cwd, env, log, input, timeout = 180_000 }) {
     return new Promise((resolve) => {
-        const child = spawn(command, args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] })
+        const child = spawn(command, args, { cwd, env, stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'] })
+        if (input !== undefined) child.stdin.end(input)
         let output = ''
         child.stdout.on('data', (data) => (output += data))
         child.stderr.on('data', (data) => (output += data))
@@ -72,6 +73,47 @@ function createRepository(work, git) {
     run(repository, 'commit', '-q', '-m', 'Fixture')
     if (git.worktree) run(repository, 'worktree', 'add', '-q', '-b', 'harness-worktree', work, 'main')
     return { commit: run(work, 'rev-parse', 'HEAD'), worktree: Boolean(git.worktree), remote: git.remote ?? null }
+}
+
+// cli-mode fixtures: the harness drives posthog-cli over the built files, the way a user without a
+// bundler plugin does. `cli.command` is process | inject-upload | upload, `cli.input` is directory
+// (the default) or stdin (the file list the plugins pipe in). The environment is what the plugins
+// set (plugin-utils' buildCliEnv) and the flags are the ones they pass.
+async function runCliSteps({ cli, kase, options, work, dist, host, output, tag }) {
+    const config = kase.cli ?? {}
+    const sourcemaps = options.sourcemaps ?? {}
+    const releaseFlags = []
+    if (sourcemaps.releaseName) releaseFlags.push('--release-name', sourcemaps.releaseName)
+    if (sourcemaps.releaseVersion) releaseFlags.push('--release-version', sourcemaps.releaseVersion)
+    const mode = sourcemaps.releaseMode ?? 'event'
+    const modeFlags = mode === 'event' ? ['--release-mode', 'event'] : []
+    const deleteFlags = sourcemaps.deleteAfterUpload === false ? [] : ['--delete-after']
+    const files = listDist(dist).filter((file) => !file.endsWith('.map')).map((file) => path.join(dist, file))
+    const target = config.input === 'stdin' ? ['--stdin'] : ['--directory', dist]
+    const input = config.input === 'stdin' ? files.join('\n') + '\n' : undefined
+    const env = sandboxEnv(work, {
+        RUST_LOG: 'posthog_cli=debug',
+        POSTHOG_CLI_HOST: host,
+        POSTHOG_CLI_API_KEY: options.personalApiKey,
+        POSTHOG_CLI_PROJECT_ID: options.projectId,
+        POSTHOG_RELEASE_MODE: mode,
+        ...(kase.env ?? {}),
+    })
+    const commands = {
+        process: [['sourcemap', 'process', ...target, ...releaseFlags, ...modeFlags, ...deleteFlags]],
+        'inject-upload': [
+            ['sourcemap', 'inject', ...target, ...releaseFlags, ...modeFlags],
+            ['sourcemap', 'upload', ...target, ...releaseFlags, ...modeFlags, ...deleteFlags],
+        ],
+        upload: [['sourcemap', 'upload', ...target, ...releaseFlags, ...modeFlags, ...deleteFlags]],
+    }[config.command ?? 'process']
+    const steps = []
+    for (const [index, args] of commands.entries()) {
+        const result = await run(cli.path, args, { cwd: work, env, input, log: path.join(output, `${tag}-cli-${index + 1}-${args[1]}.log`) })
+        steps.push({ args, code: result.code })
+        if (result.code !== 0) break
+    }
+    return steps
 }
 
 // Case options override the defaults; a null deletes the key so a case can leave out a default.
@@ -145,6 +187,13 @@ export async function executeCase({ cli, fixture, kase, selection, subject, outp
                     ...(kase.env ?? {}),
                 }),
             })
+            // In cli mode the plugin-free build is done; keep its bytes, then let the CLI rewrite them.
+            let cliSteps = null
+            let pristine = null
+            if (fixture.mode === 'cli' && build.code === 0) {
+                pristine = Object.fromEntries(listDist(dist).map((file) => [file, readFileSync(path.join(dist, file), 'utf8')]))
+                cliSteps = await runCliSteps({ cli, kase, options, work, dist, host, output, tag })
+            }
             if (existsSync(dist)) cpSync(dist, path.join(output, `${tag}-dist`), { recursive: true })
 
             const state = api.snapshot()
@@ -166,6 +215,13 @@ export async function executeCase({ cli, fixture, kase, selection, subject, outp
                 })
                 events = collectEvents({ events: mock.inspect().events, chunks, api: state, work, throws: evidence.throws })
             }
+            // Keep the server's copy of any chunk that no longer matches disk, for diagnosis.
+            for (const set of state.symbolSets) {
+                const chunk = chunks.find((candidate) => candidate.chunkId === set.chunk_id)
+                if (chunk && set.upload && set.upload.minifiedSource !== chunk.code) {
+                    writeFileSync(path.join(output, `${tag}-stored-${chunk.file}`), set.upload.minifiedSource)
+                }
+            }
             const uploaded = state.calls
                 .filter((call) => call.action === 'symbol_sets/bulk_start_upload' && call.status === 200)
                 .flatMap((call) => call.body.symbol_sets.map((set) => set.chunk_id))
@@ -174,6 +230,8 @@ export async function executeCase({ cli, fixture, kase, selection, subject, outp
                 releaseId: release?.id ?? null,
                 release: release && { name: release.project, version: release.version, metadata: release.metadata ?? {} },
                 build: { code: build.code, signal: build.signal, pluginError: PLUGIN_ERROR.test(build.output) },
+                cli: cliSteps,
+                injection: pristine && collectInjection(pristine, chunks),
                 chunks: chunks.map(({ code, absolute, ...chunk }) => chunk),
                 mapsLeft,
                 symbolSets: collectSymbolSets(chunks, state, releaseIds.slice(0, -1), release?.id),

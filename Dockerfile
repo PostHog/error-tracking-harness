@@ -11,6 +11,7 @@ WORKDIR /rig
 COPY fixtures/webpack-5.112/package.json fixtures/webpack-5.112/pnpm-workspace.yaml fixtures/webpack-5.112/pnpm-lock.yaml fixtures/webpack-5.112/
 COPY fixtures/rollup-4/package.json fixtures/rollup-4/pnpm-workspace.yaml fixtures/rollup-4/pnpm-lock.yaml fixtures/rollup-4/
 COPY fixtures/vite-8/package.json fixtures/vite-8/pnpm-workspace.yaml fixtures/vite-8/pnpm-lock.yaml fixtures/vite-8/
+COPY fixtures/cli-rollup-4/package.json fixtures/cli-rollup-4/pnpm-workspace.yaml fixtures/cli-rollup-4/pnpm-lock.yaml fixtures/cli-rollup-4/
 RUN for fixture in fixtures/*/; do (cd "$fixture" && pnpm install --frozen-lockfile --ignore-scripts); done \
     && pnpm store prune
 
