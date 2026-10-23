@@ -16,14 +16,18 @@ const RELEASE_NAME = 'harness-app'
 const PLUGIN_ERROR = /Error injecting PostHog|Error running PostHog|release resolve failed|Command failed with code|ERROR posthog_cli|panicked/
 
 function run(command, args, { cwd, env, log, input, timeout = 180_000 }) {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
         const child = spawn(command, args, { cwd, env, stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'] })
         if (input !== undefined) child.stdin.end(input)
         let output = ''
         child.stdout.on('data', (data) => (output += data))
         child.stderr.on('data', (data) => (output += data))
         const timer = setTimeout(() => child.kill('SIGKILL'), timeout)
-        child.on('close', (code, signal) => {
+        child.once('error', (error) => {
+            clearTimeout(timer)
+            reject(error)
+        })
+        child.once('close', (code, signal) => {
             clearTimeout(timer)
             if (log) writeFileSync(log, output)
             resolve({ code: code ?? -1, signal, output })
@@ -158,7 +162,10 @@ async function runHttp({ fixture, work, env, log }) {
     let output = ''
     child.stdout.on('data', (data) => (output += data))
     child.stderr.on('data', (data) => (output += data))
-    const exited = new Promise((resolve) => child.once('close', (code, signal) => resolve({ code, signal })))
+    const exited = new Promise((resolve) => {
+        child.once('close', (code, signal) => resolve({ code, signal }))
+        child.once('error', (error) => resolve({ code: -1, error }))
+    })
     const requests = []
     try {
         const deadline = Date.now() + 90_000
@@ -168,8 +175,9 @@ async function runHttp({ fixture, work, env, log }) {
             try {
                 ready = (await fetch(origin, { signal: AbortSignal.timeout(2000) })).ok
             } catch {
-                await new Promise((resolve) => setTimeout(resolve, 250))
+                // A server may still be starting up.
             }
+            if (!ready) await new Promise((resolve) => setTimeout(resolve, 250))
         }
         if (!ready) return { code: -1, output: `server did not become ready\n${output}`, requests }
         for (const route of fixture.runtime.paths) {
@@ -204,13 +212,44 @@ function mergeOptions(base, patch) {
     return merged
 }
 
+async function buildFixture({ fixture, work, options, binPath, extra, log }) {
+    const scriptName = fixture.script ?? 'build'
+    const script = JSON.parse(readFileSync(path.join(work, 'package.json'), 'utf8')).scripts?.[scriptName]
+    if (!script) throw new Error(`${fixture.name}: package.json has no "${scriptName}" script`)
+    return run('sh', ['-c', script], {
+        cwd: work,
+        log,
+        env: sandboxEnv(work, {
+            PATH: binPath,
+            NEXT_TELEMETRY_DISABLED: '1',
+            POSTHOG_HARNESS_OPTIONS: JSON.stringify(options),
+            ...(extra ?? {}),
+        }),
+    })
+}
+
+async function runFixture({ fixture, work, options, host, binPath, log }) {
+    const env = sandboxEnv(work, {
+        PATH: binPath,
+        POSTHOG_HARNESS_HOST: host,
+        POSTHOG_HARNESS_OPTIONS: JSON.stringify(options),
+        NEXT_TELEMETRY_DISABLED: '1',
+    })
+    if (fixture.runtime?.kind === 'none') return null
+    if (fixture.runtime?.kind === 'http') return runHttp({ fixture, work, env, log })
+    if (existsSync(path.join(work, fixture.entry))) {
+        return run(process.execPath, [path.join(work, fixture.entry)], { cwd: work, log, env })
+    }
+    return null
+}
+
 export async function executeCase({ cli, fixture, kase, selection, subject, output }) {
     mkdirSync(output, { recursive: true })
     const work = mkdtempSync(path.join(tmpdir(), 'error-tracking-harness-'))
     const api = createErrorTrackingApi({ apiKey: API_KEY, projectId: PROJECT_ID, fault: kase.fault, server: kase.server })
-    await api.start()
     const mock = createMockServer({ adapter: (request) => api.route(request) })
-    const host = await mock.start()
+    let apiStarted = false
+    let mockStarted = false
     const evidence = {
         cli,
         fixture: {
@@ -230,6 +269,10 @@ export async function executeCase({ cli, fixture, kase, selection, subject, outp
         afterFinalUpload: null,
     }
     try {
+        await api.start()
+        apiStarted = true
+        const host = await mock.start()
+        mockStarted = true
         cpSync(fixture.dir, work, { recursive: true, filter: (source) => !/\/(node_modules|dist)(\/|$)/.test(source) })
         if (kase.git) evidence.git = createRepository(work, kase.git)
         evidence.plugin = prepareNodeModules({ fixtureDir: fixture.dir, fixture, work, selection, subject })
@@ -237,6 +280,7 @@ export async function executeCase({ cli, fixture, kase, selection, subject, outp
         const dist = path.join(work, fixture.dist ?? path.dirname(fixture.entry))
         const binPath = `${path.join(work, 'node_modules/.bin')}${path.delimiter}${process.env.PATH}`
         const releaseIds = []
+        const previousReleases = []
         const releaseCount = kase.releases ?? 1
 
         for (let index = 0; index < releaseCount; index++) {
@@ -257,21 +301,9 @@ export async function executeCase({ cli, fixture, kase, selection, subject, outp
                 },
                 kase.options
             )
-            // The fixture's own `build` script, run the way npm would: with node_modules/.bin on
-            // PATH and no package manager in between, which would otherwise try to install
-            // itself into the sandboxed HOME.
-            const script = JSON.parse(readFileSync(path.join(work, 'package.json'), 'utf8')).scripts?.[fixture.script ?? 'build']
-            if (!script) throw new Error(`${fixture.name}: package.json has no "${fixture.script ?? 'build'}" script`)
-            const build = await run('sh', ['-c', script], {
-                cwd: work,
-                log: path.join(output, `${tag}-build.log`),
-                env: sandboxEnv(work, {
-                    PATH: binPath,
-                    NEXT_TELEMETRY_DISABLED: '1',
-                    POSTHOG_HARNESS_OPTIONS: JSON.stringify(options),
-                    ...(kase.env ?? {}),
-                }),
-            })
+            // Run the fixture script without a package manager, with only the sandboxed environment.
+            const build = await buildFixture({ fixture, work, options, binPath, extra: kase.env,
+                log: path.join(output, `${tag}-build.log`) })
             // In cli mode the plugin-free build is done; keep its bytes, then let the CLI rewrite them.
             let cliSteps = null
             let pristine = null
@@ -297,21 +329,7 @@ export async function executeCase({ cli, fixture, kase, selection, subject, outp
             let runtime = null
             let events = null
             if (build.code === 0) {
-                // A framework server reads its config again at start, so the options stay in scope.
-                const runtimeEnv = sandboxEnv(work, {
-                    PATH: binPath,
-                    POSTHOG_HARNESS_HOST: host,
-                    POSTHOG_HARNESS_OPTIONS: JSON.stringify(options),
-                    NEXT_TELEMETRY_DISABLED: '1',
-                })
-                const log = path.join(output, `${tag}-runtime.log`)
-                if (fixture.runtime?.kind === 'none') {
-                    runtime = null
-                } else if (fixture.runtime?.kind === 'http') {
-                    runtime = await runHttp({ fixture, work, env: runtimeEnv, log })
-                } else if (existsSync(path.join(work, fixture.entry))) {
-                    runtime = await run(process.execPath, [path.join(work, fixture.entry)], { cwd: work, log, env: runtimeEnv })
-                }
+                runtime = await runFixture({ fixture, work, options, host, binPath, log: path.join(output, `${tag}-runtime.log`) })
                 if (runtime) events = collectEvents({ events: mock.inspect().events, chunks, api: state, work, throws: evidence.throws })
             }
             // Keep the server's copy of any chunk that no longer matches disk, for diagnosis.
@@ -344,27 +362,30 @@ export async function executeCase({ cli, fixture, kase, selection, subject, outp
                 mockErrors: [...state.errors, ...mock.inspect().errors],
             })
             // Keep what each later release needs for the cross-release checks.
-            evidence.releases.at(-1)._chunks = chunks
-            evidence.releases.at(-1)._events = mock.inspect().events
+            previousReleases.push({ chunks, events: mock.inspect().events })
         }
 
         // Re-resolve the first release's exceptions against what the server holds at the end.
-        const first = evidence.releases[0]
-        if (evidence.releases.length > 1 && first._events?.length) {
+        const first = previousReleases[0]
+        if (previousReleases.length > 1 && first.events.length) {
             evidence.afterFinalUpload = {
-                events: collectEvents({ events: first._events, chunks: first._chunks, api: api.snapshot(), work, throws: evidence.throws }),
+                events: collectEvents({ events: first.events, chunks: first.chunks, api: api.snapshot(), work, throws: evidence.throws }),
             }
-        }
-        for (const release of evidence.releases) {
-            delete release._chunks
-            delete release._events
         }
         writeFileSync(path.join(output, 'evidence.json'), JSON.stringify(evidence, null, 2))
         if (evidence.git?.worktree) rmSync(`${work}-repository`, { recursive: true, force: true })
         return { evidence, work }
+    } catch (error) {
+        // A harness error is still diagnosable: keep the partial workspace and its path.
+        const repository = `${work}-repository`
+        writeFileSync(path.join(output, 'workspace.txt'), work + '\n' + (existsSync(repository) ? repository + '\n' : ''))
+        throw error
     } finally {
-        await mock.stop()
-        await api.stop()
+        try {
+            if (mockStarted) await mock.stop()
+        } finally {
+            if (apiStarted) await api.stop()
+        }
     }
 }
 

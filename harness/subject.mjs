@@ -30,7 +30,7 @@ function installedVersion(nodeModules, name) {
 }
 
 /** The plugin version a selection would put in place, known before anything is built. */
-export function selectedPlugin(fixture, selection, subject) {
+export function selectedPlugin(fixture, selection, subject, { metadataOnly = false } = {}) {
     // A cli-mode fixture has no plugin; the CLI under test is the matrix's own dimension.
     if (!fixture.plugin) return { name: 'posthog-cli', version: 'cli' }
     const installed = path.join(fixture.dir, 'node_modules')
@@ -39,8 +39,11 @@ export function selectedPlugin(fixture, selection, subject) {
         if (!entry) throw new Error(`subject has no tarball for ${fixture.plugin}`)
         return { name: fixture.plugin, version: entry.manifest.version }
     }
-    const version = installedVersion(installed, selection === 'floor' ? fixture.floorAlias : fixture.plugin)
-    if (!version) throw new Error(`${fixture.name}: ${fixture.plugin} is not installed; run pnpm install in fixtures/${fixture.name}`)
+    const name = selection === 'floor' ? fixture.floorAlias : fixture.plugin
+    const version = metadataOnly
+        ? (JSON.parse(readFileSync(path.join(fixture.dir, 'package.json'), 'utf8')).devDependencies ?? {})[name]?.split('@').at(-1)
+        : installedVersion(installed, name)
+    if (!version) throw new Error(`${fixture.name}: ${name} is not ${metadataOnly ? 'declared' : 'installed'}; run pnpm install in fixtures/${fixture.name}`)
     return { name: fixture.plugin, version }
 }
 

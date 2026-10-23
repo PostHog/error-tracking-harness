@@ -1,46 +1,8 @@
 {
-    "mode": "next",
+    "extends": "next",
     "bundler": "webpack",
     "version": "16.3.8",
-    "plugin": "@posthog/nextjs-config",
-    "floorAlias": "posthog-nextjs-config-floor",
     "minPlugin": "1.11.4",
-    "dist": ".next",
-    "distGlobs": [
-        "static/chunks/**/*.js",
-        "server/**/*.js",
-        "static/chunks/**/*.map",
-        "server/**/*.map"
-    ],
-    "distIgnore": [
-        "static/chunks/polyfills-*.js",
-        "server/**/*-manifest.js",
-        "server/**/*_client-reference-manifest.js",
-        "static/chunks/app/**",
-        "static/chunks/next/dist/**"
-    ],
-    "runtime": {
-        "kind": "http",
-        "start": "next start",
-        "paths": [
-            "/api/throw"
-        ]
-    },
-    "cliSelection": "edges",
-    "throws": {
-        "entry": {
-            "file": "lib/boom.js",
-            "marker": "harness:throw:entry",
-            "type": "Error",
-            "value": "boom from entry chunk"
-        },
-        "lazy": {
-            "file": "lib/lazy.js",
-            "marker": "harness:throw:lazy",
-            "type": "LazyFailure",
-            "value": "lazy chunk failed with 3 values"
-        }
-    },
     "volatileChunks": [
         "static/chunks/webpack-*.js",
         "server/webpack-runtime.js",

@@ -28,6 +28,13 @@ function pick(value, plugin, fallback, bundler) {
     return value
 }
 
+function classifyMaps(chunks, mapsLeft) {
+    const files = new Set(chunks.map((chunk) => chunk.file))
+    const left = mapsLeft.filter((map) => files.has(map.replace(/\.map$/, '')))
+    const comments = chunks.some((chunk) => chunk.sourceMappingURL)
+    return { state: left.length === 0 ? (comments ? 'dangling' : 'deleted') : comments ? 'kept-visible' : 'kept-hidden', left }
+}
+
 export function judge(evidence, kase) {
     const failures = []
     const plugin = evidence.plugin.name
@@ -75,23 +82,18 @@ export function judge(evidence, kase) {
 
         // Maps and comments count only for judged files: a map beside a file no tool could process
         // says nothing about cleanup.
-        const judgedFiles = new Set(judged.map((chunk) => chunk.file))
-        const mapsLeft = release.mapsLeft.filter((map) => judgedFiles.has(map.replace(/\.map$/, '')))
-        const comments = judged.some((chunk) => chunk.sourceMappingURL)
-        const maps = mapsLeft.length === 0 ? (comments ? 'dangling' : 'deleted') : comments ? 'kept-visible' : 'kept-hidden'
-        // `mapsBy` judges map cleanup per group of files (public assets vs a server bundle).
-        const mapsBy = expect.mapsBy
-        if (mapsBy) {
-            for (const [glob, want] of Object.entries(mapsBy)) {
-                const files = judged.filter((chunk) => matchesGlob(chunk.file, glob))
-                const left = mapsLeft.filter((map) => matchesGlob(map.replace(/\.map$/, ''), glob))
-                const commented = files.some((chunk) => chunk.sourceMappingURL)
-                const got = left.length === 0 ? (commented ? 'dangling' : 'deleted') : commented ? 'kept-visible' : 'kept-hidden'
-                if (got !== want) failures.push(`${tag}: maps under ${glob} ${got} (${left.slice(0, 3).join(', ') || 'none'}), expected ${want}`)
-            }
-        } else if (maps !== expected.maps) {
-            failures.push(`${tag}: maps ${maps} (${mapsLeft.slice(0, 4).join(', ') || 'none'}), expected ${expected.maps}`)
+        // `mapsBy` overrides the default only for files covered by its globs. Unmatched files
+        // must still satisfy the default, or an added chunk could silently escape cleanup checks.
+        const groups = Object.entries(expect.mapsBy ?? {})
+        const checkMaps = (files, want, label) => {
+            if (!files.length) return
+            const { state, left } = classifyMaps(files, release.mapsLeft)
+            if (state !== want) failures.push(`${tag}: ${label} ${state} (${left.slice(0, 4).join(', ') || 'none'}), expected ${want}`)
         }
+        for (const [glob, want] of groups) {
+            checkMaps(judged.filter((chunk) => matchesGlob(chunk.file, glob)), want, `maps under ${glob}`)
+        }
+        checkMaps(judged.filter((chunk) => !groups.some(([glob]) => matchesGlob(chunk.file, glob))), expected.maps, 'maps')
 
         if (release.chunks.length < 2) failures.push(`${tag}: expected an entry and a lazy chunk, found ${release.chunks.map((chunk) => chunk.file)}`)
         for (const chunk of judged) {
