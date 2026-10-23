@@ -12,7 +12,10 @@ COPY fixtures/webpack-5.112/package.json fixtures/webpack-5.112/pnpm-workspace.y
 COPY fixtures/rollup-4/package.json fixtures/rollup-4/pnpm-workspace.yaml fixtures/rollup-4/pnpm-lock.yaml fixtures/rollup-4/
 COPY fixtures/vite-8/package.json fixtures/vite-8/pnpm-workspace.yaml fixtures/vite-8/pnpm-lock.yaml fixtures/vite-8/
 COPY fixtures/cli-rollup-4/package.json fixtures/cli-rollup-4/pnpm-workspace.yaml fixtures/cli-rollup-4/pnpm-lock.yaml fixtures/cli-rollup-4/
-RUN for fixture in fixtures/*/; do (cd "$fixture" && pnpm install --frozen-lockfile --ignore-scripts); done \
+COPY fixtures/vite-8-isolated/package.json fixtures/vite-8-isolated/pnpm-workspace.yaml fixtures/vite-8-isolated/pnpm-lock.yaml fixtures/vite-8-isolated/
+# Build scripts run only where a fixture's pnpm-workspace.yaml allows them: @posthog/cli's
+# postinstall, which downloads the binary the plugins resolve when given no path.
+RUN for fixture in fixtures/*/; do (cd "$fixture" && pnpm install --frozen-lockfile); done \
     && pnpm store prune
 
 COPY cli-versions.txt .
