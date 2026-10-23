@@ -8,6 +8,9 @@
 //   symbols:   all | none                         default all
 //   events:    resolved | unresolved | no-release  default resolved
 //   transport: PUT | POST                          how every symbol set reached the object store
+//   release:   { name, version }                   the release row the CLI created; version 'commit'
+//                                                  means the HEAD of the case's git checkout
+//   metadataFree: [string]                         text that must not appear in release metadata
 //   reuploads: { minCli?, minPlugin?, <plugin>: <count> }  chunks uploaded again by the second release
 // Everything not named in `expect` is an invariant checked on every green release.
 import { cliAtLeast, pluginAtLeast } from './plan.mjs'
@@ -57,6 +60,16 @@ export function judge(evidence, kase) {
         const finished = release.symbolSets.filter((set) => set.finished)
         if (expected.symbols === 'all') {
             if (expected.events !== 'no-release' && !release.releaseId) failures.push(`${tag}: no release was created`)
+            if (expect.release && release.release) {
+                const want = { ...expect.release }
+                if (want.version === 'commit') want.version = evidence.git?.commit
+                if (want.name !== undefined && release.release.name !== want.name) failures.push(`${tag}: release name ${release.release.name}, expected ${want.name}`)
+                if (want.version !== undefined && release.release.version !== want.version) failures.push(`${tag}: release version ${release.release.version}, expected ${want.version}`)
+            }
+            if (expect.metadataFree && release.release) {
+                const metadata = JSON.stringify(release.release.metadata)
+                for (const text of expect.metadataFree) if (metadata.includes(text)) failures.push(`${tag}: release metadata contains ${JSON.stringify(text)}`)
+            }
             for (const chunk of release.chunks) {
                 const set = finished.find((candidate) => candidate.chunkId === chunk.chunkId)
                 if (!set) {

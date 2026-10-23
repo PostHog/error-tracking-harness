@@ -1,0 +1,17 @@
+{
+    "description": "Explicit releaseName and releaseVersion win over the git checkout the build runs in; the commit only lands in the metadata.",
+    "options": {
+        "sourcemaps": {
+            "releaseMode": "event"
+        }
+    },
+    "git": {
+        "remote": "https://github.com/posthog/other-name.git"
+    },
+    "expect": {
+        "release": {
+            "name": "harness-app",
+            "version": "1.0.0"
+        }
+    }
+}
