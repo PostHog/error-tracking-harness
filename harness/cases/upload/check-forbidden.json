@@ -1,0 +1,19 @@
+{
+    "description": "A server that predates bulk_check_upload answers 403. The CLI falls back to sending every chunk, so both releases succeed and the second one re-uploads everything.",
+    "options": {
+        "sourcemaps": {
+            "releaseMode": "event"
+        }
+    },
+    "releases": 2,
+    "fault": {
+        "api": "bulk_check_upload",
+        "status": 403
+    },
+    "expect": {
+        "reuploads": {
+            "@posthog/webpack-plugin": 2,
+            "@posthog/rollup-plugin": 2
+        }
+    }
+}

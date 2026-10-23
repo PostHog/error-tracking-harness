@@ -1,0 +1,14 @@
+{
+    "description": "An older server returns only the presigned POST form (posthog#3262). Every CLI uploads through multipart POST.",
+    "options": {
+        "sourcemaps": {
+            "releaseMode": "event"
+        }
+    },
+    "server": {
+        "presign": "post-only"
+    },
+    "expect": {
+        "transport": "POST"
+    }
+}

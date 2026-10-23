@@ -3,9 +3,11 @@
 //
 // `expect` vocabulary (each value may be a string, or an object keyed by plugin name):
 //   build:     green | fails                      default green
+//   chunkIds:  all | none                         default all (none: injection never ran)
 //   maps:      deleted | kept-hidden | kept-visible  default deleted
 //   symbols:   all | none                         default all
 //   events:    resolved | unresolved | no-release  default resolved
+//   transport: PUT | POST                          how every symbol set reached the object store
 //   reuploads: { minCli?, minPlugin?, <plugin>: <count> }  chunks uploaded again by the second release
 // Everything not named in `expect` is an invariant checked on every green release.
 import { cliAtLeast, pluginAtLeast } from './plan.mjs'
@@ -22,6 +24,7 @@ export function judge(evidence, kase) {
     const expect = kase.expect ?? {}
     const expected = {
         build: pick(expect.build, plugin, 'green'),
+        chunkIds: pick(expect.chunkIds, plugin, 'all'),
         maps: pick(expect.maps, plugin, 'deleted'),
         symbols: pick(expect.symbols, plugin, 'all'),
         events: pick(expect.events, plugin, 'resolved'),
@@ -46,7 +49,10 @@ export function judge(evidence, kase) {
         if (maps !== expected.maps) failures.push(`${tag}: maps ${maps} (${release.mapsLeft.join(', ') || 'none'}), expected ${expected.maps}`)
 
         if (release.chunks.length < 2) failures.push(`${tag}: expected an entry and a lazy chunk, found ${release.chunks.map((chunk) => chunk.file)}`)
-        for (const chunk of release.chunks) if (!chunk.chunkId) failures.push(`${tag}: ${chunk.file} has no chunk id`)
+        for (const chunk of release.chunks) {
+            if (expected.chunkIds === 'all' && !chunk.chunkId) failures.push(`${tag}: ${chunk.file} has no chunk id`)
+            if (expected.chunkIds === 'none' && chunk.chunkId) failures.push(`${tag}: ${chunk.file} carries a chunk id although injection should not have run`)
+        }
 
         const finished = release.symbolSets.filter((set) => set.finished)
         if (expected.symbols === 'all') {
@@ -62,6 +68,11 @@ export function judge(evidence, kase) {
                 if (set.storedMatchesDisk === 'layout' && mode !== 'event') failures.push(`${tag}: stored ${chunk.file} differs from disk`)
                 if (mode === 'event' && set.releaseId !== null) failures.push(`${tag}: event mode bound ${chunk.file} to a release`)
                 if (mode === 'symbol-set' && set.releaseId !== release.releaseId) failures.push(`${tag}: ${chunk.file} not bound to the release`)
+            }
+            if (expect.transport) {
+                for (const set of finished) {
+                    if (set.transport !== expect.transport) failures.push(`${tag}: ${set.file} uploaded over ${set.transport}, expected ${expect.transport}`)
+                }
             }
         } else if (finished.length) {
             failures.push(`${tag}: ${finished.length} symbol sets finished, expected none`)

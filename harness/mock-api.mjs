@@ -6,13 +6,19 @@
 //   { api: 'auth' }                                    every request is rejected as unauthorised
 //   { api: 'bulk_start_upload', status: 500 }          that action answers with the status
 //   { api: 'releases', status: 400, code: 'x' }        ...optionally with a structured error code
+//   { api: 'object_store', status: 500 }               every upload to the object store fails
+//   { api: 'object_store_post', status: 501 }          only presigned POST fails (Cloudflare R2)
+// `server` shapes what a healthy server answers:
+//   { presign: 'both' | 'post-only' | 'put-only' }     which upload URLs bulk_start_upload returns
+//                                                      (older servers sent only the POST form)
 import { createHash, randomUUID } from 'node:crypto'
 import { createServer } from 'node:http'
 import { decodeSymbolSet } from './symbol-data.mjs'
 
 const API = /^\/api\/(?:projects|environments)\/([^/]+)\/error_tracking\/(.+?)\/?$/
 
-export function createErrorTrackingApi({ apiKey, projectId, fault }) {
+export function createErrorTrackingApi({ apiKey, projectId, fault, server = {} }) {
+    const presign = server.presign ?? 'both'
     const releases = new Map() // hash_id -> release row
     const symbolSets = new Map() // chunk_id -> stored symbol set
     const attempts = new Map() // upload_attempt_id -> chunk ids started under it
@@ -32,7 +38,7 @@ export function createErrorTrackingApi({ apiKey, projectId, fault }) {
         } else if (request.method === 'POST' && url.pathname === '/post') {
             ;({ key, data } = parseMultipart(bytes, request.headers['content-type']))
         }
-        if (fault?.api === 'object_store') {
+        if (fault?.api === 'object_store' || (fault?.api === 'object_store_post' && request.method === 'POST')) {
             response.writeHead(fault.status ?? 500).end()
             return
         }
@@ -124,8 +130,8 @@ export function createErrorTrackingApi({ apiKey, projectId, fault }) {
                 })
                 id_map[set.chunk_id] = {
                     symbol_set_id: id,
-                    presigned_url: { url: `${objectStoreOrigin}/post`, fields: { key: id } },
-                    presigned_put_url: `${objectStoreOrigin}/put/${id}`,
+                    ...(presign !== 'put-only' ? { presigned_url: { url: `${objectStoreOrigin}/post`, fields: { key: id } } } : {}),
+                    ...(presign !== 'post-only' ? { presigned_put_url: `${objectStoreOrigin}/put/${id}` } : {}),
                 }
             }
             attempts.set(upload_attempt_id, requested.map((set) => set.chunk_id))
