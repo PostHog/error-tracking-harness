@@ -12,12 +12,15 @@
 
 ## 3. Fail closed on matrix selection
 
-- [ ] 3.1 Compute coverage for every applicable selected fixture/case pair across selected CLIs and fail on zero executed cells or uncovered pairs; test with actual Next 15 and Next 16 webpack fixture metadata.
-- [ ] 3.2 Make explicit subject fixture selections reject missing tarballs and unsupported overlays; infer only eligible plugin fixtures when no fixture filter is given and reject an empty inference; test both paths.
-- [ ] 3.3 Include executed, passed, failed, skipped and uncovered counts in `summary.json` and `report.md`; return a failure exit status for verdict failures or missing coverage and test all-skipped and mixed-CLI selections.
+- [ ] 3.1 Declare/validate tags on every fixture; add `--tags` with any-tag (OR) matching and intersection with `--fixtures`, reporting names/tags and failing unmatched selections.
+- [ ] 3.2 Compute coverage for every selected applicable fixture/case pair across CLIs and fail on zero executed cells or uncovered pairs; test with actual Next 15 and Next 16 webpack fixture metadata plus tag-selected subsets.
+- [ ] 3.3 Parse a local `--overrides` manifest of named npm package tarballs and optional `posthog-cli` binary; validate exact package identity, path, executable/version and conflicting CLI options without network access.
+- [ ] 3.4 Extend workspace preparation to replace any named installed package (plugin or framework), check dependency compatibility, and fail when an override is unused, missing or unsupported; test plugin-only, framework-only, combined and isolated-layout selections.
+- [ ] 3.5 Use the overridden CLI binary in selected cells instead of baked CLI versions, preserve unrelated dependency pins, and record applied package/binary provenance in evidence and reports; test no silent fallback.
+- [ ] 3.6 Include executed, passed, failed, skipped and uncovered counts in `summary.json` and `report.md`; return a failure exit status for verdict failures or missing coverage and test all-skipped and mixed-CLI selections.
 
 ## 4. Remove historical plugin paths and document consumption
 
-- [ ] 4.1 Remove plugin-version gates and `--plugins floor`, `floorAlias` declarations and old-plugin package aliases; refresh affected fixture lockfiles, CLI validation, tests and documentation while preserving framework/CLI coverage.
-- [ ] 4.2 Document and smoke-test the `posthog-js` PR-built package invocation with `--plugins subject`, including failure exit status and explicit fixture selection.
+- [ ] 4.1 Remove plugin-version gates, the `--plugins latest|floor|subject` switch, `floorAlias` declarations and old-plugin package aliases; refresh affected fixture lockfiles, CLI validation, tests and documentation while preserving framework/CLI coverage.
+- [ ] 4.2 Document and smoke-test `--overrides` with PR-built plugin, framework and/or CLI artifacts and tag selection; verify failures propagate to `posthog-js` CI.
 - [ ] 4.3 Run `pnpm check`, `git diff --check`, planning/list tests, judge-only regressions and relevant matrix cells; record genuine plugin failures without turning them into accepted outcomes.

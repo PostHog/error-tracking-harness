@@ -1,12 +1,12 @@
 ## Context
 
-See `proposal.md` and `specs/fixture-lifecycle/spec.md`. This change is planned after `enforce-shared-plugin-conformance`: its strict judge and coverage behavior must not be relaxed. At present `executeCase` always prepares `node_modules`, reads a `package.json` build script, infers output from `entry`, and dispatches on Node/HTTP/browser. `planMatrix` and validation use a fixed `mode` enum. `collectDist` and `subject.mjs` still parse JavaScript/npm artifacts; this proposal separates running fixtures from those format-specific collectors without pretending to support non-JS end-to-end symbolication yet.
+See `proposal.md` and `specs/fixture-lifecycle/spec.md`. This change is planned after `enforce-shared-plugin-conformance`: its strict judge and coverage behavior must not be relaxed. At present `executeCase` always prepares `node_modules`, reads a `package.json` build script, infers output from `entry`, and dispatches on Node/HTTP/browser. `planMatrix` and validation use a fixed `mode` enum. `collectDist` and the npm binding adapter still parse JavaScript/npm artifacts; this proposal separates running fixtures from those format-specific collectors without pretending to support non-JS end-to-end symbolication yet. The first change also adds any-tag fixture selection and local plugin/framework/CLI overrides; both remain supported throughout the lifecycle migration.
 
 ## Goals / Non-Goals
 
 **Goals:**
 - Permit a non-Node program to be prepared, built, and run through the same lifecycle API as existing fixtures.
-- Preserve the case options, mock, CLI steps, release loop, browser replay, saved evidence fields, and judge inputs for existing fixtures.
+- Preserve case options, tags, local named overrides (including CLI binary), the mock, release loop, browser replay, evidence/provenance fields and judge inputs for existing fixtures.
 - Make manifest mistakes fail validation before expensive matrix execution.
 
 **Non-Goals:**
@@ -18,7 +18,7 @@ See `proposal.md` and `specs/fixture-lifecycle/spec.md`. This change is planned 
 
 ### A single manifest lifecycle, not framework branches
 
-Add a required `lifecycle` object to `fixture.json` (and shared defaults) with `workspace`, `build`, `outputs`, `runtime`, and `triggers`. Commands use `argv: [executable, ...args]`, optional `cwd` and explicit environment mappings. A `workspace` selects the existing `node-modules` adapter (delegating to `prepareNodeModules`) or a declared preparation command; no implicit `package.json` lookup is allowed. `outputs.root` is the build root and existing include/ignore globs are kept for the JS collector. The `runtime` field selects `process`, `http`, `browser`, or `none` and carries its driver's details. `triggers` declares requests/pages or process commands and their expected throw names; the pre-existing `throws` map stays the source of expected source lines.
+Add a required `lifecycle` object to `fixture.json` (and shared defaults) with `workspace`, `build`, `outputs`, `runtime`, and `triggers`. Commands use `argv: [executable, ...args]`, optional `cwd` and explicit environment mappings. A `workspace` selects the existing npm binding adapter (supporting all named package overrides, not only the primary plugin) or a declared preparation command; no implicit `package.json` lookup is allowed. `outputs.root` is the build root and existing include/ignore globs are kept for the JS collector. The `runtime` field selects `process`, `http`, `browser`, or `none` and carries its driver's details. `triggers` declares requests/pages or process commands and their expected throw names; the pre-existing `throws` map stays the source of expected source lines.
 
 Illustrative Next shape (details finalized with migration tests):
 
@@ -43,7 +43,7 @@ The command runner replaces only documented tokens (e.g. `{port}`) in argv eleme
 
 ### Separate workspace preparation from collecting symbols
 
-`executeCase` copies a fixture, creates its mock and release loop, then calls `prepareWorkspace`, `buildRelease`, and `executeRuntime`, returning normalized build/runtime observations to existing collectors. The Node adapter retains pnpm's symlink/copy behavior and tarball overlay; its bin directory is included only for Node fixtures. A declared command preparation path is invoked inside the scrubbed, offline workspace and must not assume `node_modules`. The POSIX-shell smoke test calls lifecycle functions with a command-prepared fixture to validate this path; it is not entered into the production JS symbolication matrix until a suitable binding and collector exist. Failing to bind a required subject remains an error as established by the first change.
+`executeCase` copies a fixture, creates its mock and release loop, then calls `prepareWorkspace`, `buildRelease`, and `executeRuntime`, returning normalized build/runtime observations to existing collectors. The Node adapter retains pnpm's symlink/copy behavior and the first change's named plugin/framework package overlays; its bin directory is included only for Node fixtures. The selected CLI binary is supplied by the harness to whichever lifecycle driver needs it. A declared command preparation path is invoked inside the scrubbed, offline workspace and must not assume `node_modules`; if an override targets it and there is no compatible binding, fail rather than bypass the override. The POSIX-shell smoke test calls lifecycle functions with a command-prepared fixture to validate this path; it is not entered into the production JS symbolication matrix until a suitable binding and collector exist. Failing to bind a required subject remains an error as established by the first change.
 
 ### Make runtime drivers reusable, but keep evidence stable
 
@@ -51,11 +51,11 @@ A process driver runs explicit argv and records exit/logs; an HTTP driver starts
 
 ### Decouple case applicability from a closed framework list
 
-Replace the validator's enumerated `mode` names with a validated, nonempty applicability label shared by case and fixture; map existing `plugin`, `cli`, `next`, `nuxt` labels unchanged to preserve matrix cardinality. A new label can be declared by a new fixture and its cases without touching an executor switch. Keep CLI post-build commands case-driven (the `cli` label), not a JavaScript build special case. CLI rewriter and JS artifact collection still use their current specialized code until the format-binding proposal.
+Fixture `tags` remain selection labels matched with OR as specified in the first change; they do not determine case applicability. Replace the validator's enumerated `mode` names with a validated, nonempty applicability label shared by case and fixture; map existing `plugin`, `cli`, `next`, `nuxt` labels unchanged to preserve matrix cardinality. A new label can be declared by a new fixture and its cases without touching an executor switch. Keep CLI post-build commands case-driven (the `cli` label), not a JavaScript build special case. CLI rewriter and JS artifact collection still use their current specialized code until the format-binding proposal.
 
 ### Compare migration at stable boundaries
 
-Use metadata-only planning snapshots (fixture/case/CLI pairs) and unit driver tests before and after migration, then run targeted real fixtures for Node process, static browser, Next HTTP+browser and Nuxt HTTP. Compare emitted event names, artifact selection, release events and runtime evidence fields rather than exact bytes or unstable temp paths. The strict conformance verdict remains authoritative; an already failing plugin must continue failing for the same reason, not be rewritten as expected behavior.
+Use metadata-only planning snapshots (tag-selected fixture/case/CLI pairs, including package/CLI overrides) and unit driver tests before and after migration, then run targeted real fixtures for Node process, static browser, Next HTTP+browser and Nuxt HTTP. Compare emitted event names, artifact selection, release events and runtime evidence fields rather than exact bytes or unstable temp paths. The strict conformance verdict remains authoritative; an already failing plugin must continue failing for the same reason, not be rewritten as expected behavior.
 
 ## Risks / Trade-offs
 
@@ -69,7 +69,7 @@ Use metadata-only planning snapshots (fixture/case/CLI pairs) and unit driver te
 
 1. Land `enforce-shared-plugin-conformance` and record the current applicable matrix and evidence shape.
 2. Implement/validate the lifecycle schema and command runner; add the POSIX-shell driver smoke test before moving production fixtures.
-3. Move Node workspace preparation into its adapter and convert one Node fixture; prove metadata plan and output equivalence.
+3. Move Node workspace preparation and named npm overrides into its adapter and convert one Node fixture; prove metadata plan, override identities and output equivalence.
 4. Convert browser, Next and Nuxt fixtures, shared defaults, and CLI-mode fixture; keep old runtime behavior only as temporary migration scaffolding, then delete the implicit build/Node fallback.
 5. Rerun unit tests, fixture coverage, metadata planning, and targeted end-to-end fixtures. Real plugin failures remain failures; preserve logs and workspace evidence for diagnosis.
 

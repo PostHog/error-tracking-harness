@@ -6,10 +6,12 @@ The matrix currently passes when a plugin's known defect is written into its exp
 
 - **BREAKING:** Every retained case is a conformance test, with no `conformance: true` flag or parallel characterization mode. Healthy-upload cases require a successful build and upload, a captured exception resolved to the known source location, and the correct release on server and browser events. Two-release cases must preserve resolution for both builds. A real deviation fails the verdict; plugin-specific `no-release` success overrides are removed.
 - **BREAKING:** Remove historical characterization cases whose expected outcome accepts a product defect, including alternate release semantics not part of the agreed event-mode contract. Fault-injection cases remain only when they assert a single, explicitly agreed failure policy for all applicable plugins; otherwise remove them from the matrix until that policy is specified. No case is silently excluded or converted to an expected failure to keep CI green.
-- **BREAKING:** Remove old-plugin `floor` selection and plugin-version floors that skip cases or whole fixtures. Keep framework versions (Next 14/15/16) and independently selected CLI binaries where they satisfy the same conformance contract.
-- **BREAKING:** A run fails if a selected applicable fixture/case has no executed cell, including when all cells are skipped, the required subject package is absent, or an overlay is unsupported. `--plugins subject` must exercise the supplied build, not silently fall back to baked packages. Reports distinguish skipped, uncovered, and failed.
+- **BREAKING:** Remove old-plugin `floor` selection and plugin-version floors that skip cases or whole fixtures. Keep framework versions (Next 14/15/16) and CLI toolchain selection where they satisfy the same conformance contract.
+- Select fixtures using manifest tags (`--tags` matches **any** supplied tag); combine with `--fixtures` by intersection. Surface tags and selected fixtures in `--list` and reports; fail rather than pass when the selection exercises nothing.
+- **BREAKING:** Replace the separate `--plugins latest|floor|subject` modes with a single run path and optional local overrides: a manifest maps npm package names (plugins **or frameworks**) to package artifacts and `posthog-cli` to a binary. Only the named dependencies are replaced; all other fixture dependencies retain their pins. Validate and report what each cell actually used, with no network access or silent fallback when an override is missing, incompatible or unused.
+- **BREAKING:** A run fails if a selected applicable fixture/case has no executed cell, including when all cells are skipped or a requested override cannot be applied. Reports distinguish skipped, uncovered, and failed.
 - Strengthen multi-release assertions so a renamed artifact does not silently escape the stability check merely because its filename changed. If logical identity cannot be established, report that the invariant is unverified rather than passing it.
-- Add planning and judge regression tests with actual fixture declarations and examples of missing releases, skipped coverage, and renamed artifacts. Document how `posthog-js` CI supplies PR-built tarballs and consumes a failing harness exit status.
+- Add planning and judge regression tests with actual fixture declarations and examples of tag filtering, plugin/framework/CLI overrides, missing releases, skipped coverage, and renamed artifacts. Document how `posthog-js` CI supplies PR-built artifacts and consumes a failing harness exit status.
 - Keep JS-specific checks such as source-map comments and SRI as additional conformance assertions for applicable fixtures, not an alternate pass criterion. A language-neutral fixture lifecycle is a separate change.
 
 ## Capabilities
@@ -17,7 +19,7 @@ The matrix currently passes when a plugin's known defect is written into its exp
 ### New Capabilities
 
 - `plugin-conformance`: The single normative build/upload/capture/resolution/release and multi-release contract required of every retained test case and applicable plugin.
-- `matrix-coverage`: Selection, subject binding, and run/report rules that prevent a green result when requested conformance was not exercised.
+- `matrix-coverage`: Tag-based fixture selection, named local dependency overrides, and run/report rules that prevent a green result when requested conformance was not exercised.
 
 ### Modified Capabilities
 

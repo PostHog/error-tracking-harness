@@ -1,13 +1,13 @@
 ## 1. Establish lifecycle contract and migration baseline
 
-- [ ] 1.1 Apply `enforce-shared-plugin-conformance` first, then snapshot the applicable fixture/case/CLI matrix and representative evidence fields for Node, browser, Next, Nuxt, and CLI fixtures.
+- [ ] 1.1 Apply `enforce-shared-plugin-conformance` first, then snapshot tag-selected fixture/case/CLI matrices (with plugin/framework/CLI overrides) and representative evidence for Node, browser, Next, Nuxt and CLI fixtures.
 - [ ] 1.2 Add and validate required `lifecycle.workspace`, `build.argv`, `outputs.root`, `runtime`, and `triggers` in `harness/validate.mjs`; reject missing commands, invalid driver/trigger combinations, and unknown command tokens before execution.
 - [ ] 1.3 Replace the closed framework `mode` enum with a validated applicability label while preserving existing matching and selected-coverage behavior; add metadata-planning tests for old and new labels.
 
 ## 2. Run portable commands and drivers
 
 - [ ] 2.1 Extract an argv-based sandboxed command runner with explicit cwd, environment, documented token substitution, timeouts, log capture, and error propagation; test quoting, missing commands, and scrubbed environment.
-- [ ] 2.2 Extract workspace preparation so the Node adapter performs the existing node_modules/tarball setup, while a declared command-based fixture prepares without Node; test both with a POSIX-shell lifecycle smoke fixture.
+- [ ] 2.2 Extract workspace preparation so the Node adapter preserves named plugin/framework tarball overrides and the selected CLI binary, while a declared command-based fixture prepares without Node; test both with a POSIX-shell smoke fixture and assert unsupported overrides fail.
 - [ ] 2.3 Extract a process driver that executes a declared trigger argv and records the same runtime/evidence shape; test success and nonzero exit without a Node entrypoint.
 - [ ] 2.4 Extract an HTTP driver with declared start/readiness/trigger/shutdown, dynamic port and process-group cleanup; test readiness timeout, early exit, and cleanup.
 - [ ] 2.5 Adapt the static/attached browser driver to declared pages and URL-to-file mapping, retaining event capture, old immutable-asset replay, and cleanup; test missing events, replay and page errors.
@@ -22,6 +22,6 @@
 
 ## 4. Verify the boundary and document it
 
-- [ ] 4.1 Check before/after fixture/case/CLI plans, relevant artifact lists, runtime/evidence fields and strict verdicts; retain genuine plugin failures instead of changing expectations.
+- [ ] 4.1 Check before/after any-tag fixture selection, fixture/case/CLI plans, applied override identities, artifact lists, runtime/evidence fields and strict verdicts; retain genuine plugin failures instead of changing expectations.
 - [ ] 4.2 Document the new `fixture.json` lifecycle and an offline POSIX-shell smoke example; explicitly state that non-JS symbol collectors and non-npm subject bindings are not yet implemented.
 - [ ] 4.3 Run `pnpm check`, `git diff --check`, lifecycle smoke tests, metadata planning and targeted real-fixture cases; diagnose any preparation/runtime regression before completion.

@@ -52,13 +52,24 @@ The fixture SHALL identify which built files belong to the release and, for serv
 - **WHEN** an existing fixture is migrated to the lifecycle manifest
 - **THEN** it supplies the same built files, thrown-error markers, runtime observations, and event evidence to the judge as before the migration
 
-### Requirement: Applicability labels do not require framework-specific execution code
-Cases and fixtures SHALL declare compatible applicability labels rather than require a hardcoded list of framework names. Matching an applicable case to a newly named fixture category SHALL not require a new execution branch, while explicitly selected incompatible combinations SHALL remain uncovered rather than passing silently.
+### Requirement: Selection tags and applicability labels remain distinct
+A fixture's selection tags SHALL continue to select fixtures by any-tag matching, independently of case applicability. Cases and fixtures SHALL declare compatible applicability labels rather than require a hardcoded list of framework names. Matching an applicable case to a newly named fixture category SHALL not require a new execution branch, while explicitly selected incompatible combinations SHALL remain uncovered rather than passing silently.
 
 #### Scenario: New framework category
 - **WHEN** a fixture and case share a valid new applicability label
 - **THEN** the planner can form a cell and use the declared lifecycle without changing framework-specific executor logic
 
 #### Scenario: Incompatible selection
-- **WHEN** a selected fixture and case have no compatible applicability label
+- **WHEN** a tag-selected fixture and case have no compatible applicability label
 - **THEN** the matrix reports no applicable cell instead of claiming that the case passed
+
+### Requirement: Lifecycle preparation preserves selected overrides
+The declared workspace preparation SHALL apply all compatible local package and CLI overrides selected for that cell before running its build or runtime commands. Changing the fixture lifecycle SHALL NOT cause an overridden plugin, framework or CLI to fall back to a pinned dependency; unsupported or unapplied overrides SHALL remain visible failures.
+
+#### Scenario: Framework and plugin overrides survive migration
+- **WHEN** a Next fixture is selected by tag and receives local overrides for `next` and `@posthog/nextjs-config`
+- **THEN** both overridden packages are used by the declared build, and their identities are recorded in evidence
+
+#### Scenario: Command-prepared fixture cannot apply an override
+- **WHEN** a fixture's preparation command has no binding for an override that applies to it
+- **THEN** the cell fails before it can be reported as passing
