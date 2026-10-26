@@ -8,6 +8,7 @@ import { satisfies } from './semver.mjs'
 // @posthog/cli is an npm shim and must be checked independently of the selected CLI binary.
 const manifestAt = (file) => JSON.parse(readFileSync(file, 'utf8'))
 const preparedFile = process.env.HARNESS_PREPARED_SUBJECT ?? path.join(import.meta.dirname, '..', 'prepared-subject.json')
+if (process.env.HARNESS_PREPARED_SUBJECT && !existsSync(preparedFile)) throw new Error(`Missing prepared subject ${preparedFile}`)
 const prepared = existsSync(preparedFile) ? manifestAt(preparedFile) : { fixtures: {} }
 export const preparedFixtures = prepared.fixtures
 export function installedVersion(nodeModules, name) {
