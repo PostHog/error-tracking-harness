@@ -19,7 +19,7 @@ The harness assumes a fixture is a Node project: it builds through `package.json
 
 ### Modified Capabilities
 
-None; no archived OpenSpec capability requirement is modified. The unarchived conformance proposal remains the prerequisite and its judge contract is not changed here.
+None; the archived and synced conformance capabilities remain the prerequisite, and their judge and coverage contracts are not changed here.
 
 ## Impact
 
