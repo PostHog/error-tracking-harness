@@ -21,7 +21,7 @@ export function validateFixture(config, name) {
     if (!config.throws || !config.bundler) throw new Error(`fixture ${name}: requires bundler and throws`)
     if (config.mode !== 'cli' && !config.plugin) throw new Error(`fixture ${name}: requires plugin`)
     if (config.mode === 'cli' && config.plugin) throw new Error(`fixture ${name}: cli mode cannot use a plugin`)
-    if (!['node', 'http', 'none'].includes(config.runtime?.kind ?? config.runtime ?? 'node')) throw new Error(`fixture ${name}: invalid runtime`)
+    if (!['node', 'http', 'browser', 'none'].includes(config.runtime?.kind ?? config.runtime ?? 'node')) throw new Error(`fixture ${name}: invalid runtime`)
 }
 
 export function validateCase(config, name) {

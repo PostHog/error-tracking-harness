@@ -4,11 +4,28 @@
     "plugin": "@posthog/rollup-plugin",
     "floorAlias": "posthog-rollup-plugin-floor",
     "dist": "dist",
-    "distGlobs": ["**/*.js", "**/*.map"],
+    "distGlobs": [
+        "**/*.js",
+        "**/*.map"
+    ],
     "integrity": "dist/index.html",
-    "runtime": { "kind": "none" },
+    "runtime": {
+        "kind": "browser",
+        "serve": "dist",
+        "page": "/index.html"
+    },
     "throws": {
-        "entry": { "file": "src/boom.js", "marker": "harness:throw:entry", "type": "Error", "value": "boom from entry chunk" },
-        "lazy": { "file": "src/lazy.js", "marker": "harness:throw:lazy", "type": "LazyFailure", "value": "lazy chunk failed with 3 values" }
+        "entry": {
+            "file": "src/boom.js",
+            "marker": "harness:throw:entry",
+            "type": "Error",
+            "value": "boom from entry chunk"
+        },
+        "lazy": {
+            "file": "src/lazy.js",
+            "marker": "harness:throw:lazy",
+            "type": "LazyFailure",
+            "value": "lazy chunk failed with 3 values"
+        }
     }
 }

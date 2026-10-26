@@ -20,5 +20,5 @@ export default {
         crossOriginLoading: 'anonymous',
         clean: true,
     },
-    plugins: [new PosthogWebpackPlugin(posthogOptions), new HtmlWebpackPlugin(), new SubresourceIntegrityPlugin()],
+    plugins: [new PosthogWebpackPlugin(posthogOptions), new HtmlWebpackPlugin({ template: './src/index.html' }), new SubresourceIntegrityPlugin()],
 }

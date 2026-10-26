@@ -22,6 +22,7 @@ test('fixture defaults resolve without installed dependencies', () => {
     assert.equal(next.plugin, '@posthog/nextjs-config')
     assert.equal(next.throws.lazy.file, 'lib/lazy.js')
     assert.equal(next.distIgnore.length, 5)
+    assert.equal(fixtures.find((fixture) => fixture.name === 'vite-8-sri').runtime.kind, 'browser')
     assert.equal(turbo.distIgnore.length, 3)
     assert.ok(loadCases(path.join(root, 'harness/cases')).length >= 33)
 })

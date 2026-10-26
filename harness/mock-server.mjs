@@ -85,8 +85,36 @@ export function createMockServer({ adapter } = {}) {
         response.end(status === 204 ? undefined : bytes)
     }
 
+    // What posthog-js asks for at init, answered with the least that lets it capture: no replay,
+    // no surveys, no flags, no extension scripts.
+    function config(token) {
+        return {
+            token,
+            supportedCompression: ['gzip', 'gzip-js'],
+            analytics: { endpoint: '/i/v0/e/' },
+            autocapture_opt_out: true,
+            sessionRecording: false,
+            surveys: false,
+            hasFeatureFlags: false,
+            errorTracking: { autocaptureExceptions: false },
+        }
+    }
+
     function backend(request) {
         const path = request.path.replace(/\/+$/, '')
+        const configMatch = /^\/array\/([^/]+)\/config(\.js)?$/.exec(path)
+        if (request.method === 'GET' && configMatch) {
+            const value = config(configMatch[1])
+            return configMatch[2]
+                ? {
+                      headers: { 'Content-Type': 'text/javascript' },
+                      body: `window._POSTHOG_REMOTE_CONFIG = window._POSTHOG_REMOTE_CONFIG || {}; window._POSTHOG_REMOTE_CONFIG[${JSON.stringify(configMatch[1])}] = {config: ${JSON.stringify(value)}};`,
+                  }
+                : { json: value }
+        }
+        if (request.method === 'POST' && (path === '/flags' || path === '/decide')) {
+            return { json: { featureFlags: {}, featureFlagPayloads: {}, errorsWhileComputingFlags: false, sessionRecording: false } }
+        }
         if (request.method !== 'POST') return undefined
         if (['/batch', '/e', '/i/v0/e'].includes(path)) {
             events.push(...eventsIn(request.body))
