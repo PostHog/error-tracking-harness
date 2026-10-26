@@ -57,8 +57,30 @@ docker run --rm --network none \
 ```
 
 A framework-only, plugin-only, combined or CLI-only override works. Unmentioned packages retain
-fixture pins. Without `--fixtures` or `--tags`, package overrides select fixtures depending on at
-least one named package; a CLI-only override selects all fixtures. With filters, every named
+fixture pins. For posthog-js PRs that pack `@posthog/core` alongside a plugin, include the already-
+packed core tarball in the same manifest, for example:
+
+```json
+{
+  "packages": {
+    "@posthog/nuxt": "./nuxt.tgz",
+    "@posthog/webpack-plugin": "./webpack-plugin.tgz",
+    "@posthog/core": "./core.tgz"
+  }
+}
+```
+
+Mount all three tarballs under `/subject` with the manifest. The harness uses the fixture's
+pruned pnpm store plus those tarballs to reinstall the affected dependency graph with `pnpm
+install --offline`; it never fetches packages at run time. If the PR needs another dependency
+absent from the image's store, pack and override that package too or update the image's pinned
+lockfiles. `@posthog/cli` is an npm dependency/shim, distinct from the CLI executable selected
+with `binaries.posthog-cli` or `--cli-binary`. Only use the binary field for the executable.
+Installed paths and versions in per-cell evidence/report are verified against tarball contents;
+requested but failed overrides are not listed as applied.
+
+Without `--fixtures` or `--tags`, package overrides select fixtures depending on at least one
+named package; a CLI-only override selects all fixtures. With filters, every named
 override must be used in the selected fixtures. Tarball identity and paths, CLI executability and
 reported version, dependency compatibility and binding support are checked: no missing override
 silently falls back to the pinned copy. An isolated pnpm layout that cannot accept an override

@@ -8,7 +8,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFil
 import { homedir } from 'node:os'
 import path from 'node:path'
 import { loadCases, loadFixtures, planMatrix } from './plan.mjs'
-import { loadOverrides, selectedPlugin } from './subject.mjs'
+import { bindsPackage, loadOverrides, selectedPlugin } from './subject.mjs'
 import { coverage } from './coverage.mjs'
 import { executeCase, discardWork } from './execute.mjs'
 import { judge } from './judge.mjs'
@@ -79,12 +79,7 @@ if (!clis.length) {
     const versions = baked.length ? baked : readFileSync(path.join(root, 'cli-versions.txt'), 'utf8').split(/\s+/).filter(Boolean)
     clis.push(...versions.map(cliEntry))
 }
-function dependsOn(fixture, name) {
-    const file = path.join(fixture.dir, 'package.json')
-    if (!existsSync(file)) return false
-    const pkg = JSON.parse(readFileSync(file, 'utf8'))
-    return name in (pkg.dependencies ?? {}) || name in (pkg.devDependencies ?? {})
-}
+const dependsOn = (fixture, name) => bindsPackage(fixture, name, overrides.packages)
 let fixtures = loadFixtures(path.join(root, 'fixtures'), list(args.fixtures), list(args.tags))
 if (overrides.packages.size && !args.fixtures && !args.tags) {
     fixtures = fixtures.filter((fixture) => [...overrides.packages.keys()].some((name) => dependsOn(fixture, name)))
@@ -132,9 +127,7 @@ for (const entry of matrix) {
     const label = `${entry.cli.label}/${entry.fixture.name}/${entry.kase.name}`
     const base = { cli: entry.cli.label, cliPath: entry.cli.path, cliVersion: entry.cli.reported ?? entry.cli.version,
         fixture: entry.fixture.name, tags: entry.fixture.tags, case: entry.kase.name, plugin: `${entry.plugin.name}@${entry.plugin.version}`,
-        framework: frameworkFor(entry.fixture), packages: Object.fromEntries([...overrides.packages]
-            .filter(([name]) => dependsOn(entry.fixture, name))
-            .map(([name, item]) => [name, { version: item.manifest.version, path: item.tarball }])) }
+        framework: frameworkFor(entry.fixture), packages: {} }
     if (entry.skipped) {
         results.push({ ...base, ok: false, skipped: entry.skipped, failures: [] })
         console.log(`SKIP ${label}: ${entry.skipped}`)
@@ -154,7 +147,7 @@ for (const entry of matrix) {
     } catch (error) {
         mkdirSync(output, { recursive: true })
         writeFileSync(path.join(output, 'error.txt'), error.stack + '\n')
-        result = { ...base, ok: false, failures: [`harness error: ${error.message.split('\n')[0]}`] }
+        result = { ...base, plugin: null, framework: null, ok: false, failures: [`harness error: ${error.message.split('\n')[0]}`] }
     }
     results.push(result)
     console.log(`${result.ok ? 'PASS' : 'FAIL'} ${label}${result.ok ? '' : ': ' + result.failures[0]}`)

@@ -1,11 +1,11 @@
 // Local, named package overrides replace only the requested installed dependencies. All other
 // packages stay pinned to the fixture's offline node_modules tree.
 import { execFileSync } from 'node:child_process'
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { satisfies } from './semver.mjs'
 
-const UNCHECKED = new Set(['@posthog/cli'])
+// @posthog/cli is an npm shim and must be checked independently of the selected CLI binary.
 const manifestAt = (file) => JSON.parse(readFileSync(file, 'utf8'))
 export function installedVersion(nodeModules, name) {
     const file = path.join(nodeModules, name, 'package.json')
@@ -57,22 +57,67 @@ export function selectedPlugin(fixture, overrides = new Map(), { metadataOnly = 
 
 function copyTree(source, destination) {
     try {
-        execFileSync('cp', [process.platform === 'darwin' ? '-RPc' : '-RPl', source, destination], { stdio: 'pipe' })
+        execFileSync('cp', [...(process.platform === 'darwin' ? ['-RPc'] : ['-RP', '--reflink=auto']), source, destination], { stdio: 'pipe' })
     } catch {
         rmSync(destination, { recursive: true, force: true })
         cpSync(source, destination, { recursive: true, verbatimSymlinks: true })
     }
 }
 
+// A lockfile lists transitive packages even when hoisted node_modules happens to expose them at
+// the root. Do not confuse a hoisted dependency with a declared direct dependency.
+export function bindsPackage(fixture, name, overrides = new Map()) {
+    const file = path.join(fixture.dir, 'package.json')
+    if (!existsSync(file)) return false
+    const pkg = manifestAt(file)
+    if (name in (pkg.dependencies ?? {}) || name in (pkg.devDependencies ?? {})) return true
+    const lock = path.join(fixture.dir, 'pnpm-lock.yaml')
+    if (existsSync(lock) && readFileSync(lock, 'utf8').split('\n').some((line) =>
+        line.startsWith('  ') && line.trim().replace(/^['"]/, '').startsWith(`${name}@`))) return true
+    return [...overrides].some(([other, entry]) => other !== name &&
+        (other in (pkg.dependencies ?? {}) || other in (pkg.devDependencies ?? {})) &&
+        name in (entry.manifest.dependencies ?? {}))
+}
+
+function boundPackage(nodeModules, name, from) {
+    let directory = realpathSync(from)
+    while (true) {
+        const candidate = path.join(directory, 'node_modules', name)
+        if (existsSync(path.join(candidate, 'package.json'))) return candidate
+        const parent = path.dirname(directory)
+        if (parent === directory) return null
+        directory = parent
+    }
+}
+
+// Check the actual bytes, not just the declared version: a tarball can have the same version as
+// the image's pinned package. Checking every packed file also detects an unchanged baked install.
+function verifyTarball(name, entry, destination, fixture) {
+    if (!destination) throw new Error(`${fixture.name}: override ${name} was not bound in node_modules`)
+    const installed = manifestAt(path.join(destination, 'package.json'))
+    if (installed.name !== name || installed.version !== entry.manifest.version) throw new Error(`${fixture.name}: override ${name} resolved to ${installed.name}@${installed.version} at ${destination}, expected ${entry.manifest.version}`)
+    const files = execFileSync('tar', ['-tzf', entry.tarball], { encoding: 'utf8' }).trim().split('\n')
+    for (const file of files) {
+        if (!file.startsWith('package/') || file.endsWith('/')) continue
+        const relative = file.slice('package/'.length)
+        if (!relative || relative.split('/').includes('..')) throw new Error(`${name}: invalid tarball member ${file}`)
+        const unpacked = path.join(destination, relative)
+        const packed = execFileSync('tar', ['-xzOf', entry.tarball, file])
+        if (!existsSync(unpacked) || !readFileSync(unpacked).equals(packed)) throw new Error(`${fixture.name}: override ${name} was not installed from ${entry.tarball} at ${destination} (${relative} differs)`)
+    }
+    return { version: installed.version, path: entry.tarball, installedPath: realpathSync(destination) }
+}
+
 export function prepareNodeModules({ fixtureDir, fixture, work, overrides = new Map() }) {
     const installed = path.join(fixtureDir, 'node_modules')
     const nodeModules = path.join(work, 'node_modules')
     const declared = manifestAt(path.join(fixtureDir, 'package.json'))
-    const required = [...overrides].filter(([name]) => name in (declared.dependencies ?? {}) || name in (declared.devDependencies ?? {}))
-    for (const [name] of required) if (!installedVersion(installed, name)) throw new Error(`${fixture.name}: override ${name} is declared but not installed`)
-    const applied = required
+    const applied = [...overrides].filter(([name]) => bindsPackage({ ...fixture, dir: fixtureDir }, name, overrides))
+    if (overrides.size && !applied.length) throw new Error(`${fixture.name}: unbound override ${[...overrides.keys()].join(', ')}`)
+    const transitive = applied.some(([name]) => !(name in (declared.dependencies ?? {}) || name in (declared.devDependencies ?? {})))
+    for (const [name] of applied) if (!transitive && !installedVersion(installed, name)) throw new Error(`${fixture.name}: override ${name} is declared but not installed`)
     if (applied.length && fixture.layout === 'pnpm-isolated') throw new Error(`${fixture.name}: unsupported override binding in pnpm-isolated layout`)
-    if (fixture.nodeModules === 'copy') copyTree(installed, nodeModules)
+    if (fixture.nodeModules === 'copy' || applied.length) copyTree(installed, nodeModules)
     else {
         mkdirSync(nodeModules)
         for (const entry of readdirSync(installed, { withFileTypes: true })) {
@@ -81,6 +126,29 @@ export function prepareNodeModules({ fixtureDir, fixture, work, overrides = new 
                 mkdirSync(path.join(nodeModules, entry.name))
                 for (const child of readdirSync(source)) symlinkSync(path.join(source, child), path.join(nodeModules, entry.name, child), 'dir')
             } else symlinkSync(source, path.join(nodeModules, entry.name), 'dir')
+        }
+    }
+    if (transitive) {
+        // pnpm rewires the *whole graph* (including a plugin's nested core), using only the
+        // image's store and mounted tarballs. Never write the lockfile in the baked fixture.
+        const config = path.join(work, 'pnpm-workspace.yaml')
+        if (!existsSync(config)) throw new Error(`${fixture.name}: transitive overrides require pnpm-workspace.yaml`)
+        writeFileSync(config, readFileSync(config, 'utf8') + '\noverrides:\n' +
+            applied.map(([name, entry]) => `  ${JSON.stringify(name)}: ${JSON.stringify(`file:${entry.tarball}`)}`).join('\n') + '\n')
+        // A direct dependency must also name its tarball: do not rely on pnpm override
+        // precedence changing between pnpm releases.
+        for (const [name, entry] of applied) {
+            for (const section of ['dependencies', 'devDependencies']) {
+                if (name in (declared[section] ?? {})) declared[section][name] = `file:${entry.tarball}`
+            }
+        }
+        writeFileSync(path.join(work, 'package.json'), JSON.stringify(declared, null, 2) + '\n')
+        try {
+            execFileSync('pnpm', ['install', '--offline', '--no-frozen-lockfile', '--ignore-scripts'], {
+                cwd: work, env: { ...process.env, CI: 'true' }, encoding: 'utf8', stdio: 'pipe', timeout: 180_000,
+            })
+        } catch (error) {
+            throw new Error(`${fixture.name}: offline override install failed (${applied.map(([name]) => name).join(', ')}): ${String(error.stderr ?? error.message).trim().slice(-1500)}`)
         }
     }
     if (fixture.plugin && !overrides.has(fixture.plugin)) {
@@ -92,20 +160,33 @@ export function prepareNodeModules({ fixtureDir, fixture, work, overrides = new 
     }
     for (const [name, { tarball, manifest }] of applied) {
         for (const [dependency, declared] of Object.entries(manifest.dependencies ?? {})) {
-            if (UNCHECKED.has(dependency)) continue
             const range = declared.startsWith('npm:') ? declared.slice(declared.lastIndexOf('@') + 1) : declared
-            const version = overrides.get(dependency)?.manifest.version ?? installedVersion(installed, dependency)
+            const version = overrides.get(dependency)?.manifest.version ?? installedVersion(nodeModules, dependency)
             if (!version || !satisfies(version, range)) throw new Error(`${name} needs ${dependency}@${range}, but ${fixture.name} has ${version ?? 'nothing'}`)
         }
-        const destination = path.join(nodeModules, name)
-        rmSync(destination, { recursive: true, force: true })
-        mkdirSync(destination, { recursive: true })
-        execFileSync('tar', ['-xzf', tarball, '--strip-components=1', '-C', destination])
+        if (!transitive) {
+            const destination = path.join(nodeModules, name)
+            rmSync(destination, { recursive: true, force: true })
+            mkdirSync(destination, { recursive: true })
+            execFileSync('tar', ['-xzf', tarball, '--strip-components=1', '-C', destination])
+        }
     }
-    const packages = Object.fromEntries(applied.map(([name, entry]) => [name, { version: entry.manifest.version, path: entry.tarball }]))
+    const pluginDir = fixture.plugin ? path.join(nodeModules, fixture.plugin) : work
+    const packages = Object.fromEntries(applied.map(([name, entry]) => {
+        const dependent = applied.find(([parent, item]) => parent !== name && name in (item.manifest.dependencies ?? {}))?.[0]
+        const destination = boundPackage(nodeModules, name, dependent ? path.join(nodeModules, dependent) : pluginDir)
+            ?? boundPackage(nodeModules, name, work)
+        return [name, verifyTarball(name, entry, destination, fixture)]
+    }))
+    for (const [parent, entry] of applied) {
+        for (const name of Object.keys(entry.manifest.dependencies ?? {})) {
+            if (!packages[name]) continue
+            verifyTarball(name, overrides.get(name), boundPackage(nodeModules, name, path.join(nodeModules, parent)), fixture)
+        }
+    }
     const framework = ['next', 'nuxt', 'vite', 'webpack', 'rollup'].find((name) => installedVersion(nodeModules, name))
-    const frameworkInfo = framework && { name: framework, version: installedVersion(nodeModules, framework), path: packages[framework]?.path ?? null }
+    const frameworkInfo = framework && { name: framework, version: installedVersion(nodeModules, framework), path: packages[framework]?.path ?? null, installedPath: realpathSync(path.join(nodeModules, framework)) }
     if (!fixture.plugin) return { name: 'posthog-cli', version: 'cli', source: 'pinned', packages, framework: frameworkInfo }
     const plugin = manifestAt(path.join(nodeModules, fixture.plugin, 'package.json'))
-    return { name: plugin.name, version: plugin.version, source: packages[fixture.plugin]?.path ?? 'pinned', packages, framework: frameworkInfo }
+    return { name: plugin.name, version: plugin.version, source: packages[fixture.plugin]?.path ?? 'pinned', installedPath: realpathSync(path.join(nodeModules, fixture.plugin)), packages, framework: frameworkInfo }
 }
