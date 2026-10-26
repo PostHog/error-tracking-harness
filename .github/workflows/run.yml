@@ -55,7 +55,7 @@ jobs:
                   docker run --rm --network none \
                     -v "$PWD/test-results:/artifacts" \
                     error-tracking-harness:pr \
-                    --artifacts /artifacts --fixtures ${{ matrix.fixture }} --plugins latest
+                    --artifacts /artifacts --fixtures ${{ matrix.fixture }}
             - name: Report
               if: always()
               run: cat test-results/report.md >> "$GITHUB_STEP_SUMMARY"
