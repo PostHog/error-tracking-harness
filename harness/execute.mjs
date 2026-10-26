@@ -212,6 +212,7 @@ export async function executeCase({ cli, fixture, kase, overrides, output }) {
         const applicable = new Map([...overrides].filter(([name]) => bindsPackage(fixture, name, overrides)))
         evidence.plugin = await prepareWorkspace({ fixture, work, overrides: applicable, tokens: baseTokens,
             env: sandboxEnv(work, { PATH: binPath, POSTHOG_HARNESS_HOST: host, POSTHOG_HARNESS_CLI: cli.path ?? '' }) })
+        for (const [name, entry] of Object.entries(evidence.plugin.packages ?? {})) evidence.selection[name] = entry.path
         evidence.throws = expectedThrows(work, fixture)
         const dist = path.join(work, fixture.lifecycle.outputs.root)
         const releaseIds = []
