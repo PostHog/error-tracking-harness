@@ -334,7 +334,7 @@ async function runFixture({ fixture, work, options, host, binPath, mock, log, re
     return null
 }
 
-export async function executeCase({ cli, fixture, kase, selection, subject, output }) {
+export async function executeCase({ cli, fixture, kase, overrides, output }) {
     mkdirSync(output, { recursive: true })
     const work = mkdtempSync(path.join(tmpdir(), 'error-tracking-harness-'))
     const api = createErrorTrackingApi({ apiKey: API_KEY, projectId: PROJECT_ID, fault: kase.fault, server: kase.server })
@@ -354,7 +354,7 @@ export async function executeCase({ cli, fixture, kase, selection, subject, outp
         },
         plugin: null,
         case: kase.name,
-        selection,
+        selection: Object.fromEntries([...overrides ?? []].map(([name, entry]) => [name, entry.tarball])),
         throws: null,
         git: null,
         releases: [],
@@ -367,7 +367,7 @@ export async function executeCase({ cli, fixture, kase, selection, subject, outp
         mockStarted = true
         cpSync(fixture.dir, work, { recursive: true, filter: (source) => !/\/(node_modules|dist)(\/|$)/.test(source) })
         if (kase.git) evidence.git = createRepository(work, kase.git)
-        evidence.plugin = prepareNodeModules({ fixtureDir: fixture.dir, fixture, work, selection, subject })
+        evidence.plugin = prepareNodeModules({ fixtureDir: fixture.dir, fixture, work, overrides })
         evidence.throws = expectedThrows(work, fixture)
         const dist = path.join(work, fixture.dist ?? path.dirname(fixture.entry))
         const binPath = `${path.join(work, 'node_modules/.bin')}${path.delimiter}${process.env.PATH}`

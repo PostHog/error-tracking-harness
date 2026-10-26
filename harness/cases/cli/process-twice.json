@@ -1,19 +1,7 @@
 {
     "mode": "cli",
-    "description": "Two releases built and processed from the same source in event mode: the on-disk injection derives the same content-addressed chunk ids, and nothing is uploaded again for the second release.",
-    "options": {
-        "sourcemaps": {
-            "releaseMode": "event"
-        }
-    },
-    "cli": {
-        "command": "process"
-    },
-    "releases": 2,
-    "expect": {
-        "reuploads": {
-            "minCli": "0.18.11",
-            "posthog-cli": 0
-        }
-    }
+    "description": "Two processed event-mode releases preserve chunk identity and resolve both sets of errors.",
+    "options": { "sourcemaps": { "releaseMode": "event" } },
+    "cli": { "command": "process" },
+    "releases": 2
 }

@@ -15,9 +15,6 @@ importers:
       '@posthog/rollup-plugin':
         specifier: 1.6.1
         version: 1.6.1(rollup@4.64.7)
-      posthog-rollup-plugin-floor:
-        specifier: npm:@posthog/rollup-plugin@1.6.0
-        version: '@posthog/rollup-plugin@1.6.0(rollup@4.64.7)'
       vite:
         specifier: 8.3.4
         version: 8.3.4
@@ -53,11 +50,6 @@ packages:
 
   '@posthog/plugin-utils@2.0.1':
     resolution: {integrity: sha512-ZiQfUcgY65EjF2vkqL4Aau6sx0aqvSWoXaGSGu9Solnmv6e6VRjQbAU0SCKbxpJxcEsCJof9vmvnrFTQIEOUAQ==}
-
-  '@posthog/rollup-plugin@1.6.0':
-    resolution: {integrity: sha512-QdSjBt+wt+j2VwLADpsr1Ii2j8F5rWe+V/m9O9PuZXWT8nUne8ML5ciMxAmsGTIIfVwmLhdXPtDlJEc2LuJ9rg==}
-    peerDependencies:
-      rollup: '>= 4.0.0'
 
   '@posthog/rollup-plugin@1.6.1':
     resolution: {integrity: sha512-oVViFAZnIT3YVPahXzvvZtsPHISWikoYpqF+Hb4YMvufeVmTeljhFeg/hH5Y7b9UYhYbbv0JE7UQRfeSZZ6R+A==}
@@ -574,13 +566,6 @@ snapshots:
   '@posthog/plugin-utils@2.0.1':
     dependencies:
       cross-spawn: 7.0.6
-
-  '@posthog/rollup-plugin@1.6.0(rollup@4.64.7)':
-    dependencies:
-      '@posthog/cli': 0.16.2
-      '@posthog/plugin-utils': 2.0.1
-      magic-string: 0.30.21
-      rollup: 4.64.7
 
   '@posthog/rollup-plugin@1.6.1(rollup@4.64.7)':
     dependencies:

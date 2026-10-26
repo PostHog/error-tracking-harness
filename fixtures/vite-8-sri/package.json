@@ -11,7 +11,6 @@
     },
     "devDependencies": {
         "@posthog/rollup-plugin": "1.6.1",
-        "posthog-rollup-plugin-floor": "npm:@posthog/rollup-plugin@1.6.0",
         "vite": "8.3.4",
         "vite-plugin-sri3": "2.0.0"
     }

@@ -1,7 +1,6 @@
 {
     "mode": "next",
     "plugin": "@posthog/nextjs-config",
-    "floorAlias": "posthog-nextjs-config-floor",
     "dist": ".next",
     "distGlobs": [
         "static/chunks/**/*.js",

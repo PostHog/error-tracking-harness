@@ -1,10 +1,9 @@
 {
     "bundler": "vite",
+    "tags": ["vite","isolated"],
     "version": "8.3.4",
     "plugin": "@posthog/rollup-plugin",
-    "floorAlias": "posthog-rollup-plugin-floor",
     "layout": "pnpm-isolated",
-    "subject": false,
     "entry": "dist/main.mjs",
     "runtime": "node",
     "throws": {

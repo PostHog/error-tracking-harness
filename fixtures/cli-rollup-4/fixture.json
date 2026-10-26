@@ -1,6 +1,7 @@
 {
     "mode": "cli",
     "bundler": "rollup",
+    "tags": ["cli","rollup"],
     "version": "4.64.7",
     "entry": "dist/main.mjs",
     "runtime": "node",

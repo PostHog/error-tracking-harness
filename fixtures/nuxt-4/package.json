@@ -13,7 +13,6 @@
         "vue": "3.5.22"
     },
     "devDependencies": {
-        "@posthog/nuxt": "1.7.91",
-        "posthog-nuxt-floor": "npm:@posthog/nuxt@1.7.87"
+        "@posthog/nuxt": "1.7.91"
     }
 }

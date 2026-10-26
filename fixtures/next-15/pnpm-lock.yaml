@@ -27,9 +27,6 @@ importers:
       '@posthog/nextjs-config':
         specifier: 1.11.3
         version: 1.11.3(next@15.5.28(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(posthog-js@1.438.12(react@19.2.8))(webpack@5.112.0)
-      posthog-nextjs-config-floor:
-        specifier: npm:@posthog/nextjs-config@1.11.0
-        version: '@posthog/nextjs-config@1.11.0(next@15.5.28(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(webpack@5.112.0)'
 
 packages:
 
@@ -284,12 +281,6 @@ packages:
 
   '@posthog/core@1.59.1':
     resolution: {integrity: sha512-P39YgzQVDh6oz6wAzQXEnoHgTYpM7gifonmVKq1scAJco79h31XmmNVurRq9tTmmyIrr1uX8FHT0riCsyfV9AQ==}
-
-  '@posthog/nextjs-config@1.11.0':
-    resolution: {integrity: sha512-/bK8FZRkAb5pQPaPyKADvypeWi5k3Ep51v02CaPtH7LxcSP3lSUrJisWOWeHHfPd7SDtUrvYnGLWjfKk2uVMtw==}
-    engines: {node: ^20.20.0 || >=22.22.0}
-    peerDependencies:
-      next: '>12.1.0'
 
   '@posthog/nextjs-config@1.11.3':
     resolution: {integrity: sha512-ybsYEQmDJwRtePYvhn/arbez7KTMQQ4s1brhSoIXt8SnUCQGbL36VEKr9gvzgrBswbC7bjjhQ8REHgONuOOwlw==}
@@ -912,16 +903,6 @@ snapshots:
   '@posthog/core@1.59.1':
     dependencies:
       '@posthog/types': 1.416.0
-
-  '@posthog/nextjs-config@1.11.0(next@15.5.28(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(webpack@5.112.0)':
-    dependencies:
-      '@posthog/cli': 0.16.2
-      '@posthog/plugin-utils': 2.0.1
-      '@posthog/webpack-plugin': 1.7.1(webpack@5.112.0)
-      next: 15.5.28(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
-      semver: 7.8.5
-    transitivePeerDependencies:
-      - webpack
 
   '@posthog/nextjs-config@1.11.3(next@15.5.28(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(posthog-js@1.438.12(react@19.2.8))(webpack@5.112.0)':
     dependencies:

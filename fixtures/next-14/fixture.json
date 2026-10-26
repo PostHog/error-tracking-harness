@@ -1,9 +1,9 @@
 {
     "mode": "next",
     "bundler": "webpack",
+    "tags": ["next","browser","framework"],
     "version": "14.2.35",
     "plugin": "@posthog/nextjs-config",
-    "floorAlias": "posthog-nextjs-config-floor",
     "dist": ".next",
     "distGlobs": [
         "static/chunks/**/*.js",
@@ -59,7 +59,7 @@
         "static/chunks/webpack-*.js",
         "server/webpack-runtime.js",
         "server/webpack-api-runtime.js",
-        "server/app/client/**"
+        "server/app/client/page.js"
     ],
     "immutable": "static/**",
     "optionalIds": [

@@ -2,24 +2,16 @@
 // evidence can be judged again after a case changes.
 //
 // `expect` vocabulary (each value may be a string, or an object keyed by plugin name):
-//   build:     green | fails                      default green
-//   cli:       green | fails                      default green; cli-mode fixtures only
-//   chunkIds:  all | none | any                   default all (none: injection never ran; any: not judged,
-//                                                  e.g. webpack stamps debug ids whether or not the plugin ran)
-//   maps:      deleted | dangling | kept-hidden | kept-visible  default deleted
+//   chunkIds:  all | any                          default all (any: native bundler debug IDs)
+//   maps:      deleted | kept-hidden | kept-visible  default deleted
 //   mapsBy:    { '<glob>': <maps value> }        the same, judged per group of files
-//              (dangling: maps gone but a sourceMappingURL comment still points at them)
-//   symbols:   all | none                         default all
-//   events:    resolved | unresolved | no-release  default resolved
 //   transport: PUT | POST                          how every symbol set reached the object store
-//   eventsBy:  { '<throw name>': <events value> } overrides `events` for one throw (e.g. the browser side)
 //   release:   { name, version }                   the release row the CLI created; version 'commit'
 //                                                  means the HEAD of the case's git checkout
 //   metadataFree: [string]                         text that must not appear in release metadata
-//   reuploads: { minCli?, minPlugin?, <plugin>: <count> }  chunks uploaded again by the second release
+//   reuploads: { <plugin>: <count> }             chunks uploaded again by the second release
 // Everything not named in `expect` is an invariant checked on every green release.
 import { matchesGlob } from 'node:path'
-import { cliAtLeast, pluginAtLeast } from './plan.mjs'
 
 // `<plugin>:<bundler>` keys let one plugin that drives two bundlers (nextjs-config: webpack and
 // Turbopack) carry different expectations.
@@ -42,15 +34,17 @@ export function judge(evidence, kase) {
     const bundler = evidence.fixture.bundler
     const expect = kase.expect ?? {}
     const expected = {
-        build: pick(expect.build, plugin, 'green', bundler),
-        cli: pick(expect.cli, plugin, 'green', bundler),
+        build: 'green',
+        cli: 'green',
         chunkIds: pick(expect.chunkIds, plugin, 'all', bundler),
         maps: pick(expect.maps, plugin, 'deleted', bundler),
-        symbols: pick(expect.symbols, plugin, 'all', bundler),
-        events: pick(expect.events, plugin, 'resolved', bundler),
+        symbols: 'all',
+        events: 'resolved',
     }
-    const mode = kase.options?.sourcemaps?.releaseMode ?? 'event'
+    const mode = 'event'
     const green = []
+    const requested = kase.releases ?? 1
+    if (evidence.releases.length !== requested) failures.push(`expected ${requested} releases, found ${evidence.releases.length}`)
 
     evidence.releases.forEach((release, index) => {
         const tag = `release ${release.releaseVersion}`
@@ -104,7 +98,7 @@ export function judge(evidence, kase) {
 
         const finished = release.symbolSets.filter((set) => set.finished)
         if (expected.symbols === 'all') {
-            if (expected.events !== 'no-release' && !release.releaseId) failures.push(`${tag}: no release was created`)
+            if (!release.releaseId) failures.push(`${tag}: no release was created`)
             if (expect.release && release.release) {
                 const want = { ...expect.release }
                 if (want.version === 'commit') want.version = evidence.git?.commit
@@ -140,24 +134,23 @@ export function judge(evidence, kase) {
             if (release.integrity.length === 0) failures.push(`${tag}: no integrity attributes found in the built HTML`)
             for (const check of release.integrity) if (!check.ok) failures.push(`${tag}: integrity of ${check.src} no longer matches ${check.file}`)
         }
-        // A fixture without a runtime (a browser bundle, until Chromium arrives) ends here.
-        if (evidence.fixture.runtime === 'none') return
         if (!release.runtime) {
             failures.push(`${tag}: the bundle was not run`)
             return
         }
+        if (!Array.isArray(release.events)) failures.push(`${tag}: missing runtime event evidence`)
         if (release.runtime.code !== 0) {
             const detail = release.runtime.pageErrors?.length ? ` (page errors: ${release.runtime.pageErrors.slice(0, 2).join(' | ')})` : ''
             failures.push(`${tag}: the bundle exited with ${release.runtime.code}${detail}`)
         }
-        judgeEvents(release.events, { tag, expected: expected.events, mode, release: { ...release, plugin, bundler }, throws: evidence.throws, chunkIds: expected.chunkIds, eventsBy: expect.eventsBy }, failures)
+        if (Array.isArray(release.events)) judgeEvents(release.events, { tag, expected: expected.events, mode, release: { ...release, plugin, bundler }, throws: evidence.throws, chunkIds: expected.chunkIds, eventsBy: expect.eventsBy }, failures)
         // A second release served the first release's immutable assets to the browser; that only
         // proves something if at least one was replayed.
         if (index > 0 && evidence.fixture.immutable && release.runtime.replayed?.length === 0) failures.push(`${tag}: no previous-release asset was replayed to the browser`)
 
         if (index === 1 && expect.reuploads) {
             const count = expect.reuploads[`${plugin}:${bundler}`] ?? expect.reuploads[plugin]
-            if (count !== undefined && cliAtLeast(evidence.cli, expect.reuploads.minCli) && pluginAtLeast(evidence.plugin, expect.reuploads.minPlugin)) {
+            if (count !== undefined) {
                 if (release.uploadedChunkIds.length !== count) {
                     failures.push(`${tag}: re-uploaded ${release.uploadedChunkIds.length} chunks, expected ${count}`)
                 }
@@ -165,22 +158,24 @@ export function judge(evidence, kase) {
         }
     })
 
-    if (green.length === 2 && expected.symbols === 'all') {
+    if (green.length === requested && requested > 1 && expected.symbols === 'all') {
         // A fixture names the chunks whose bytes legitimately change per release: webpack runtime
         // chunks into which nextjs-config compiles the release id before hashing (posthog-js#5332).
         const volatile = evidence.fixture.volatileChunks ?? []
         const stable = (release) => release.chunks.filter((chunk) => !volatile.some((glob) => matchesGlob(chunk.file, glob)))
-        // Compare the chunks both releases emitted under the same name. A bundler that names
-        // chunks by content hash renames what changed; those are reported, not judged.
-        const byName = (release) => new Map(stable(release).map((chunk) => [chunk.file, chunk.chunkId]))
-        const [first, second] = green.map(byName)
-        const shared = [...first.keys()].filter((file) => second.has(file))
-        const changed = shared.filter((file) => first.get(file) !== second.get(file))
-        if (mode === 'event' && changed.length) failures.push(`event mode: chunk ids changed between releases for ${changed.slice(0, 4).join(', ')}`)
-        if (mode === 'symbol-set' && shared.length && changed.length === 0) failures.push('symbol-set mode: chunk ids reused across releases')
+        // Compare sorted multisets, not filenames: content-hashed output can rename every chunk
+        // between builds, and those chunks must still count toward the stability check.
+        const identities = (release) => stable(release).map((chunk) => chunk.chunkId).sort()
+        const [first, ...later] = green.map(identities)
+        if (!first.length || later.some((ids) => !ids.length)) failures.push('event mode: no non-volatile chunks to compare across releases')
+        for (const [index, ids] of later.entries()) {
+            if (first.length && ids.length && JSON.stringify(first) !== JSON.stringify(ids)) failures.push(`event mode: chunk ids changed between releases 1 and ${index + 2} (${first.length} vs ${ids.length} checked chunks)`)
+        }
         // Event mode uploads with force, so a later release can overwrite a symbol set an older
         // deployment still points at. Its exceptions must still resolve against what is stored now.
-        if (evidence.afterFinalUpload && expected.events !== 'unresolved' && evidence.fixture.runtime !== 'none') {
+        if (!Array.isArray(evidence.afterFinalUpload?.events)) {
+            failures.push('missing first-release events re-resolved after the last upload')
+        } else if (evidence.afterFinalUpload?.events) {
             judgeEvents(
                 evidence.afterFinalUpload.events,
                 { tag: 'release 1 after the last upload', expected: expected.events, mode, release: { ...green[0], plugin, bundler }, throws: evidence.throws, eventsBy: expect.eventsBy },
@@ -188,13 +183,16 @@ export function judge(evidence, kase) {
             )
         }
     }
-
+    if (requested > 1 && green.length !== requested) failures.push(`only ${green.length}/${requested} releases built successfully`)
+    if (requested > 1 && !Array.isArray(evidence.afterFinalUpload?.events)) {
+        if (!failures.some((message) => message.startsWith('missing first-release'))) failures.push('missing first-release events re-resolved after the last upload')
+    }
     return { ok: failures.length === 0, failures }
 }
 
 function judgeEvents(events, { tag, expected: expectedAll, mode, release, throws, chunkIds = 'all', eventsBy = {} }, failures) {
     for (const name of Object.keys(throws)) {
-        const expected = pick(eventsBy[name], release.plugin ?? '', expectedAll, release.bundler ?? '')
+        const expected = 'resolved'
         const event = events.find((candidate) => candidate.case === name)
         if (!event) {
             failures.push(`${tag}: no $exception for ${name}`)

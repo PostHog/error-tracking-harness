@@ -1,12 +1,12 @@
 // Fail before a long matrix run when a case or fixture has a typo or an invalid combination.
-const FIXTURE = 'bundler cliSelection dist distGlobs distIgnore entry extends floorAlias immutable integrity layout minCli minPlugin mode nodeModules optionalIds plugin runtime subject throws version volatileChunks'.split(' ')
-const CASE = 'cli cliBinary description env expect fault git minCli minPlugin mode options releases server'.split(' ')
+const FIXTURE = 'bundler cliSelection dist distGlobs distIgnore entry extends immutable integrity layout minCli mode nodeModules optionalIds plugin runtime tags throws version volatileChunks'.split(' ')
+const CASE = 'cli description env expect git minCli mode options releases server'.split(' ')
 const EXPECT = 'build chunkIds cli events eventsBy maps mapsBy metadataFree release reuploads symbols transport'.split(' ')
 const MODES = ['plugin', 'cli', 'next', 'nuxt']
-const MAPS = ['deleted', 'dangling', 'kept-hidden', 'kept-visible']
+const MAPS = ['deleted', 'kept-hidden', 'kept-visible']
 const EXPECT_VALUES = {
-    build: ['green', 'fails'], cli: ['green', 'fails'], chunkIds: ['all', 'none', 'any'],
-    maps: MAPS, symbols: ['all', 'none'], events: ['resolved', 'unresolved', 'no-release'],
+    build: ['green'], cli: ['green'], chunkIds: ['all', 'any'],
+    maps: MAPS, symbols: ['all'], events: ['resolved'],
     transport: ['PUT', 'POST'],
 }
 
@@ -19,6 +19,7 @@ export function validateFixture(config, name) {
     keys(config, FIXTURE, `fixture ${name}`)
     if (!MODES.includes(config.mode ?? 'plugin')) throw new Error(`fixture ${name}: invalid mode ${config.mode}`)
     if (!config.throws || !config.bundler) throw new Error(`fixture ${name}: requires bundler and throws`)
+    if (!Array.isArray(config.tags) || !config.tags.length || config.tags.some((tag) => typeof tag !== 'string' || !/^[a-z]+(?:-[a-z0-9]+)*$/.test(tag)) || new Set(config.tags).size !== config.tags.length) throw new Error(`fixture ${name}: requires unique lowercase kebab-case tags`)
     if (config.mode !== 'cli' && !config.plugin) throw new Error(`fixture ${name}: requires plugin`)
     if (config.mode === 'cli' && config.plugin) throw new Error(`fixture ${name}: cli mode cannot use a plugin`)
     if (!['node', 'http', 'browser', 'none'].includes(config.runtime?.kind ?? config.runtime ?? 'node')) throw new Error(`fixture ${name}: invalid runtime`)
@@ -29,7 +30,9 @@ export function validateCase(config, name) {
     if (!MODES.includes(config.mode ?? 'plugin')) throw new Error(`case ${name}: invalid mode ${config.mode}`)
     if (config.releases !== undefined && (!Number.isInteger(config.releases) || config.releases < 1)) throw new Error(`case ${name}: releases must be a positive integer`)
     if (config.cli && config.mode !== 'cli') throw new Error(`case ${name}: cli steps require cli mode`)
-    if (config.cliBinary && config.cliBinary !== 'fixture') throw new Error(`case ${name}: invalid cliBinary`)
+    if (config.options?.sourcemaps?.releaseMode && config.options.sourcemaps.releaseMode !== 'event') throw new Error(`case ${name}: only event release mode is conformance`)
+    if ((config.options?.sourcemaps?.releaseName === null || config.options?.sourcemaps?.releaseVersion === null) && !config.git && !config.env) throw new Error(`case ${name}: a release is required`)
+    if (config.expect?.reuploads && Object.keys(config.expect.reuploads).some((key) => key === 'minPlugin' || key === 'minCli')) throw new Error(`case ${name}: version-gated expectations are not conformance`)
     if (config.expect) {
         keys(config.expect, EXPECT, `case ${name} expect`)
         for (const [field, allowed] of Object.entries(EXPECT_VALUES)) {
@@ -64,6 +67,5 @@ export function validateCase(config, name) {
         keys(config.server, ['presign'], `case ${name} server`)
         if (config.server.presign && !['both', 'post-only', 'put-only'].includes(config.server.presign)) throw new Error(`case ${name}: invalid presign`)
     }
-    if (config.fault) keys(config.fault, ['api', 'status', 'code'], `case ${name} fault`)
     if (config.git) keys(config.git, ['remote', 'worktree'], `case ${name} git`)
 }
