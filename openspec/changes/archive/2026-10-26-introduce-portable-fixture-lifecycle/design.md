@@ -63,7 +63,7 @@ Use metadata-only planning snapshots (tag-selected fixture/case/CLI pairs, inclu
 - [Generic tokens permit unexpected values] → Restrict substitution to known tokens with validation and do not evaluate strings through a shell implicitly.
 - [HTTP processes or browser pages linger on failure] → Preserve detached-process-group teardown and browser/server `finally` cleanup, with tests for early exits and timeouts.
 - [Non-Node smoke could imply unsupported symbolication] → Exercise only preparation/build/runtime plumbing; report symbol formats and subject binding as separate capabilities.
-- [Migration occurs while earlier conformance work is unimplemented] → Apply the conformance change first, then rebase this proposal's implementation and confirm assertions/coverage have not regressed.
+- [Migration is stacked on an unmerged conformance PR] → Retarget after the prerequisite merges; preserve its strict assertions and coverage through planning and evidence snapshots.
 
 ## Migration Plan
 

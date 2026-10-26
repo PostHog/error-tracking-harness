@@ -1,18 +1,17 @@
 // Runs one cell of the matrix: build the fixture as its own process in a scrubbed environment,
 // run the bundle, and collect evidence. Nothing here decides pass or fail; see judge.mjs.
 import { execFileSync, spawn } from 'node:child_process'
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync, existsSync } from 'node:fs'
-import { createServer } from 'node:net'
-import { createServer as createHttpServer } from 'node:http'
-import { createRequire } from 'node:module'
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path, { matchesGlob } from 'node:path'
 import { createMockServer } from './mock-server.mjs'
 import { createErrorTrackingApi } from './mock-api.mjs'
-import { prepareNodeModules } from './subject.mjs'
 import { collectDist, collectEvents, collectInjection, collectIntegrity, collectSymbolSets, expectedThrows, listDist } from './collect.mjs'
+import { runCommand } from './commands.mjs'
+import { prepareWorkspace, runProcess } from './lifecycle.mjs'
+import { runHttpLifecycle } from './runtime-http.mjs'
+import { runBrowser, openPage } from './runtime-browser.mjs'
 
-const harnessRoot = path.resolve(import.meta.dirname, '..')
 const API_KEY = 'phx_harness_personal_key'
 const PROJECT_ID = '4242'
 const RELEASE_NAME = 'harness-app'
@@ -124,168 +123,6 @@ async function runCliSteps({ cli, kase, options, work, dist, host, output, tag, 
     return steps
 }
 
-async function availablePort() {
-    const server = createServer()
-    await new Promise((resolve, reject) => {
-        server.once('error', reject)
-        server.listen(0, '127.0.0.1', resolve)
-    })
-    const port = server.address().port
-    await new Promise((resolve) => server.close(resolve))
-    return port
-}
-
-function killGroup(child, signal) {
-    if (!child.pid) return
-    try {
-        process.kill(-child.pid, signal)
-    } catch (error) {
-        if (error.code !== 'ESRCH') throw error
-    }
-}
-
-// An HTTP runtime (`runtime: { kind: 'http', start, paths }`): start the built server from the
-// fixture's node_modules/.bin, wait for it to answer, request each path so the server captures
-// its exceptions, then stop the whole process group (frameworks fork workers).
-async function runHttp({ fixture, work, env, log, host, mock, expectedEvents, replay }) {
-    const port = await availablePort()
-    const origin = `http://127.0.0.1:${port}`
-    // Frameworks take the port as flags (next start -p) or as variables (Nitro: PORT, HOST).
-    const { portEnv, hostEnv } = fixture.runtime
-    const command = portEnv ? fixture.runtime.start : `${fixture.runtime.start} -p ${port} -H 127.0.0.1`
-    const serverEnv = { ...env }
-    for (const name of portEnv ?? []) serverEnv[name] = String(port)
-    for (const name of hostEnv ?? []) serverEnv[name] = '127.0.0.1'
-    const child = spawn('sh', ['-c', command], {
-        cwd: work,
-        env: serverEnv,
-        stdio: ['ignore', 'pipe', 'pipe'],
-        detached: true,
-    })
-    let output = ''
-    child.stdout.on('data', (data) => (output += data))
-    child.stderr.on('data', (data) => (output += data))
-    const exited = new Promise((resolve) => {
-        child.once('close', (code, signal) => resolve({ code, signal }))
-        child.once('error', (error) => resolve({ code: -1, error }))
-    })
-    const requests = []
-    try {
-        const deadline = Date.now() + 90_000
-        let ready = false
-        while (Date.now() < deadline && !ready) {
-            if (child.exitCode !== null) break
-            try {
-                ready = (await fetch(origin, { signal: AbortSignal.timeout(2000) })).ok
-            } catch {
-                // A server may still be starting up.
-            }
-            if (!ready) await new Promise((resolve) => setTimeout(resolve, 250))
-        }
-        if (!ready) return { code: -1, output: `server did not become ready\n${output}`, requests }
-        for (const route of fixture.runtime.paths) {
-            try {
-                const response = await fetch(origin + route, { signal: AbortSignal.timeout(30_000) })
-                requests.push({ path: route, status: response.status, body: (await response.text()).slice(0, 2000) })
-            } catch (error) {
-                requests.push({ path: route, status: null, error: error.message })
-            }
-        }
-        // The SDK flushes on shutdown inside the handler; give the capture a moment to land.
-        await new Promise((resolve) => setTimeout(resolve, 1500))
-        let page = null
-        if (fixture.runtime.browser) {
-            page = await openPage({ origin, page: fixture.runtime.browser.page, host, expectedEvents, mock, replay })
-        }
-        const ok = requests.every((request) => request.status === 200) && (!page || page.code === 0)
-        return { code: ok ? 0 : 1, output, requests, origin, pageErrors: page?.pageErrors ?? null, consoleErrors: page?.consoleErrors ?? null, failedRequests: page?.failedRequests ?? null, replayed: page?.replayed ?? null }
-    } finally {
-        killGroup(child, 'SIGTERM')
-        const timer = setTimeout(() => killGroup(child, 'SIGKILL'), 5000)
-        await exited
-        clearTimeout(timer)
-        if (log) writeFileSync(log, output + '\n' + JSON.stringify({ requests }, null, 2) + '\n')
-    }
-}
-
-// A browser runtime (`runtime: { kind: 'browser', serve, page }`): serve the built directory over
-// loopback, open the page in headless Chromium with the mock's origin as ?host=, and wait for the
-// page to capture its exceptions. Page errors and failed requests are evidence: a chunk whose SRI
-// hash no longer matches is refused by the browser and never runs.
-function contentType(file) {
-    if (/\.(m?js|cjs)$/.test(file)) return 'text/javascript'
-    if (file.endsWith('.html')) return 'text/html'
-    if (file.endsWith('.css')) return 'text/css'
-    if (file.endsWith('.map') || file.endsWith('.json')) return 'application/json'
-    return 'application/octet-stream'
-}
-
-async function runBrowser({ fixture, work, host, expectedEvents, mock, log }) {
-    const root = path.join(work, fixture.runtime.serve)
-    const served = []
-    const server = createHttpServer((request, response) => {
-        const pathname = decodeURIComponent(new URL(request.url, 'http://127.0.0.1').pathname)
-        const file = path.join(root, pathname === '/' ? fixture.runtime.page : pathname)
-        if (!file.startsWith(root) || !existsSync(file) || !statSync(file).isFile()) {
-            served.push({ path: pathname, status: 404 })
-            response.writeHead(404).end()
-            return
-        }
-        served.push({ path: pathname, status: 200 })
-        response.writeHead(200, { 'Content-Type': contentType(file), 'Cache-Control': 'no-store' })
-        response.end(readFileSync(file))
-    })
-    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
-    const origin = `http://127.0.0.1:${server.address().port}`
-    try {
-        const result = await openPage({ origin, page: fixture.runtime.page, host, expectedEvents, mock })
-        result.served = served
-        if (log) writeFileSync(log, JSON.stringify(result, null, 2) + '\n')
-        return result
-    } finally {
-        server.closeAllConnections()
-        await new Promise((resolve) => server.close(resolve))
-    }
-}
-
-// Opens `origin + page` in headless Chromium and waits for `expectedEvents` exceptions to reach
-// the mock. With `replay`, requests for immutable assets that existed in the previous release
-// are answered with that release's bytes, as a browser holding a tab open across a deploy
-// would see them (posthog-js#5332): the page must still work and report the new release.
-async function openPage({ origin, page: pagePath, host, expectedEvents, mock, replay }) {
-    const { chromium } = createRequire(path.join(harnessRoot, 'package.json'))('playwright')
-    const browser = await chromium.launch({ headless: true })
-    const pageErrors = []
-    const consoleErrors = []
-    const failedRequests = []
-    const replayed = []
-    try {
-        const page = await browser.newPage()
-        page.on('pageerror', (error) => pageErrors.push(error.message))
-        page.on('console', (message) => {
-            if (message.type() === 'error') consoleErrors.push(message.text())
-        })
-        page.on('requestfailed', (request) => failedRequests.push({ url: request.url(), error: request.failure()?.errorText }))
-        if (replay) {
-            await page.route('**/*', async (route) => {
-                const url = new URL(route.request().url())
-                const previous = url.origin === origin ? replay(decodeURIComponent(url.pathname)) : undefined
-                if (previous === undefined) return route.continue()
-                replayed.push(url.pathname)
-                return route.fulfill({ status: 200, contentType: contentType(url.pathname), body: previous })
-            })
-        }
-        await page.goto(`${origin}${pagePath}?host=${encodeURIComponent(host)}`, { waitUntil: 'load' })
-        const captured = () => mock.inspect().events.filter((event) => event.event === '$exception').length
-        const deadline = Date.now() + 20_000
-        while (Date.now() < deadline && captured() < expectedEvents) await new Promise((resolve) => setTimeout(resolve, 200))
-        await page.waitForTimeout(500)
-        return { code: captured() >= expectedEvents && pageErrors.length === 0 ? 0 : 1, origin, pageErrors, consoleErrors, failedRequests, replayed }
-    } finally {
-        await browser.close()
-    }
-}
-
 // Case options override the defaults; a null deletes the key so a case can leave out a default.
 function mergeOptions(base, patch) {
     const merged = { ...base }
@@ -298,40 +135,42 @@ function mergeOptions(base, patch) {
     return merged
 }
 
-async function buildFixture({ fixture, work, options, binPath, extra, log }) {
-    const scriptName = fixture.script ?? 'build'
-    const script = JSON.parse(readFileSync(path.join(work, 'package.json'), 'utf8')).scripts?.[scriptName]
-    if (!script) throw new Error(`${fixture.name}: package.json has no "${scriptName}" script`)
-    return run('sh', ['-c', script], {
-        cwd: work,
-        log,
-        env: sandboxEnv(work, {
-            PATH: binPath,
-            NEXT_TELEMETRY_DISABLED: '1',
-            POSTHOG_HARNESS_OPTIONS: JSON.stringify(options),
-            ...(extra ?? {}),
-        }),
-    })
+async function buildFixture({ fixture, work, options, binPath, extra, log, tokens }) {
+    return runCommand(fixture.lifecycle.build, { work, tokens,
+        env: sandboxEnv(work, { PATH: binPath, NEXT_TELEMETRY_DISABLED: '1', POSTHOG_HARNESS_OPTIONS: JSON.stringify(options), ...(extra ?? {}) }), log })
 }
 
-async function runFixture({ fixture, work, options, host, binPath, mock, log, replay }) {
+async function runFixture({ fixture, work, options, host, binPath, mock, log, replay, tokens }) {
     const env = sandboxEnv(work, {
         PATH: binPath,
         POSTHOG_HARNESS_HOST: host,
         POSTHOG_HARNESS_OPTIONS: JSON.stringify(options),
         NEXT_TELEMETRY_DISABLED: '1',
     })
-    if (fixture.runtime?.kind === 'none') return null
-    if (fixture.runtime?.kind === 'browser') {
-        return runBrowser({ fixture, work, host, expectedEvents: Object.keys(fixture.throws).length, mock, log })
+    if (fixture.lifecycle.runtime.driver === 'process') return runProcess({ fixture, work, env, tokens, log })
+    if (fixture.lifecycle.runtime.driver === 'browser') return runBrowser({ fixture, work, host, replay,
+        expectedEvents: Object.keys(fixture.throws).length, mock, log })
+    if (fixture.lifecycle.runtime.driver === 'http') {
+        const browserTriggers = fixture.lifecycle.triggers.filter((trigger) => trigger.kind === 'browser')
+        const visitBrowser = browserTriggers.length && (async ({ origin }) => {
+            const result = { code: 0, pageErrors: [], consoleErrors: [], failedRequests: [], replayed: [] }
+            let expected = fixture.lifecycle.triggers.filter((trigger) => trigger.kind === 'http')
+                .reduce((count, trigger) => count + trigger.expects.length, 0)
+            for (const trigger of browserTriggers) {
+                expected += trigger.expects.length
+                const page = await openPage({ origin, page: trigger.page, host, expectedEvents: expected, mock, replay })
+                if (page.code !== 0) result.code = 1
+                result.pageErrors.push(...page.pageErrors)
+                result.consoleErrors.push(...page.consoleErrors)
+                result.failedRequests.push(...page.failedRequests)
+                result.replayed.push(...page.replayed)
+            }
+            return result
+        })
+        return runHttpLifecycle({ fixture, work, env, tokens, log, visitBrowser })
     }
-    if (fixture.runtime?.kind === 'http') {
-        return runHttp({ fixture, work, env, log, host, mock, expectedEvents: Object.keys(fixture.throws).length, replay })
-    }
-    if (existsSync(path.join(work, fixture.entry))) {
-        return run(process.execPath, [path.join(work, fixture.entry)], { cwd: work, log, env })
-    }
-    return null
+    if (fixture.lifecycle.runtime.driver === 'none') return null
+    throw new Error(`${fixture.name}: unsupported runtime driver ${fixture.lifecycle.runtime.driver}`)
 }
 
 export async function executeCase({ cli, fixture, kase, overrides, output }) {
@@ -347,7 +186,7 @@ export async function executeCase({ cli, fixture, kase, overrides, output }) {
             name: fixture.name,
             bundler: fixture.bundler,
             version: fixture.version,
-            runtime: fixture.runtime?.kind ?? (fixture.runtime ?? 'node'),
+            runtime: fixture.lifecycle.runtime.driver,
             immutable: fixture.immutable ?? null,
             volatileChunks: fixture.volatileChunks ?? [],
             optionalIds: fixture.optionalIds ?? [],
@@ -367,10 +206,12 @@ export async function executeCase({ cli, fixture, kase, overrides, output }) {
         mockStarted = true
         cpSync(fixture.dir, work, { recursive: true, filter: (source) => !/\/(node_modules|dist)(\/|$)/.test(source) })
         if (kase.git) evidence.git = createRepository(work, kase.git)
-        evidence.plugin = prepareNodeModules({ fixtureDir: fixture.dir, fixture, work, overrides })
-        evidence.throws = expectedThrows(work, fixture)
-        const dist = path.join(work, fixture.dist ?? path.dirname(fixture.entry))
         const binPath = `${path.join(work, 'node_modules/.bin')}${path.delimiter}${process.env.PATH}`
+        const baseTokens = { work, host, cliPath: cli.path }
+        evidence.plugin = await prepareWorkspace({ fixture, work, overrides, tokens: baseTokens,
+            env: sandboxEnv(work, { PATH: binPath, POSTHOG_HARNESS_HOST: host, POSTHOG_HARNESS_CLI: cli.path ?? '' }) })
+        evidence.throws = expectedThrows(work, fixture)
+        const dist = path.join(work, fixture.lifecycle.outputs.root)
         const releaseIds = []
         const previousReleases = []
         const releaseCount = kase.releases ?? 1
@@ -394,7 +235,8 @@ export async function executeCase({ cli, fixture, kase, overrides, output }) {
                 kase.options
             )
             // Run the fixture script without a package manager, with only the sandboxed environment.
-            const build = await buildFixture({ fixture, work, options, binPath, extra: kase.env,
+            const tokens = { ...baseTokens, releaseVersion }
+            const build = await buildFixture({ fixture, work, options, binPath, extra: kase.env, tokens,
                 log: path.join(output, `${tag}-build.log`) })
             // In cli mode the plugin-free build is done; keep its bytes, then let the CLI rewrite them.
             let cliSteps = null
@@ -425,8 +267,8 @@ export async function executeCase({ cli, fixture, kase, overrides, output }) {
                 // Replay the prior release's immutable assets while loading the new page, as a
                 // browser with cached files would across a deployment.
                 const previousDist = index > 0 && fixture.immutable ? path.join(output, `release-1.0.${index - 1}-dist`) : null
-                const prefix = fixture.runtime?.browser?.urlPrefix ?? '/'
-                const replay = previousDist && fixture.runtime?.browser
+                const prefix = fixture.lifecycle.runtime.browser?.urlPrefix ?? '/'
+                const replay = previousDist && ['http', 'browser'].includes(fixture.lifecycle.runtime.driver)
                     ? (pathname) => {
                           if (!pathname.startsWith(prefix)) return undefined
                           const relative = pathname.slice(prefix.length)
@@ -435,12 +277,12 @@ export async function executeCase({ cli, fixture, kase, overrides, output }) {
                           return existsSync(file) ? readFileSync(file) : undefined
                       }
                     : undefined
-                runtime = await runFixture({ fixture, work, options, host, binPath, mock, replay,
+                runtime = await runFixture({ fixture, work, options, host, binPath, mock, replay, tokens,
                     log: path.join(output, `${tag}-runtime.log`) })
                 served = runtime?.origin && {
                     origin: runtime.origin,
-                    root: path.join(work, fixture.runtime?.browser?.root ?? fixture.runtime?.serve ?? '.'),
-                    strip: fixture.runtime?.browser?.urlPrefix ?? '',
+                    root: path.join(work, fixture.lifecycle.runtime.browser?.root ?? fixture.lifecycle.runtime.serve ?? '.'),
+                    strip: fixture.lifecycle.runtime.browser?.urlPrefix ?? '',
                 }
                 if (runtime) events = collectEvents({ events: mock.inspect().events, chunks, api: state, work, throws: evidence.throws, served })
             }

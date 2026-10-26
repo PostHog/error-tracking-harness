@@ -12,6 +12,7 @@ What `distIgnore` leaves out of the invariants, and why:
 
 `volatileChunks` on the webpack fixtures: the webpack runtime chunks, into which `nextjs-config`
 compiles the release id before hashing, and the SSR bundle of the client page
-(`server/app/client/**`), which contains posthog-js and therefore that same compiled release id.
-On Turbopack the client chunks and the SSR chunk of the client page change the same way. Client
-chunks that change are renamed by their content hash and reported as new, not judged.
+(`server/app/client/page.js`), which contains posthog-js and therefore that same compiled release id.
+On Turbopack only the SSR chunk of the client page is exempted; static client chunks remain in the
+cross-release chunk-ID multiset even when their content-hashed filenames change. A genuine plugin
+failure is reported rather than exempted by a broad static-chunk pattern.

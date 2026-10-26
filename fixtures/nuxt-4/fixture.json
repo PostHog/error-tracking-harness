@@ -5,7 +5,6 @@
     "version": "4.6.1",
     "plugin": "@posthog/nuxt",
     "minCli": "0.18.0",
-    "dist": ".output",
     "distGlobs": [
         "public/_nuxt/**/*.js",
         "server/**/*.mjs",
@@ -15,20 +14,18 @@
     "distIgnore": [
         "server/node_modules/**"
     ],
-    "runtime": {
-        "kind": "http",
-        "start": "node .output/server/index.mjs",
-        "portEnv": [
-            "PORT",
-            "NITRO_PORT"
-        ],
-        "hostEnv": [
-            "HOST",
-            "NITRO_HOST"
-        ],
-        "paths": [
-            "/api/throw"
-        ]
+    "lifecycle": {
+        "workspace": { "adapter": "node-modules" },
+        "build": { "argv": ["node_modules/.bin/nuxt", "build"] },
+        "outputs": { "root": ".output" },
+        "runtime": {
+            "driver": "http",
+            "start": { "argv": ["node", ".output/server/index.mjs"] },
+            "ready": { "path": "/" },
+            "portEnv": ["PORT", "NITRO_PORT"],
+            "hostEnv": ["HOST", "NITRO_HOST"]
+        },
+        "triggers": [{ "kind": "http", "path": "/api/throw", "expects": ["entry", "lazy"] }]
     },
     "cliSelection": "edges",
     "throws": {

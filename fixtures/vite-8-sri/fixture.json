@@ -3,16 +3,17 @@
     "tags": ["vite","browser","sri"],
     "version": "8.3.4",
     "plugin": "@posthog/rollup-plugin",
-    "dist": "dist",
     "distGlobs": [
         "**/*.js",
         "**/*.map"
     ],
     "integrity": "dist/index.html",
-    "runtime": {
-        "kind": "browser",
-        "serve": "dist",
-        "page": "/index.html"
+    "lifecycle": {
+        "workspace": { "adapter": "node-modules" },
+        "build": { "argv": ["node_modules/.bin/vite", "build"] },
+        "outputs": { "root": "dist" },
+        "runtime": { "driver": "browser", "serve": "dist" },
+        "triggers": [{ "kind": "browser", "page": "/index.html", "expects": ["entry", "lazy"] }]
     },
     "throws": {
         "entry": {

@@ -83,6 +83,18 @@ test('tags use OR, intersect names, and skipped Next pairs remain uncovered', ()
     assert.equal(coverage(next, loadCases(path.join(root, 'harness/cases'), 'baseline/event'), [], []).length, 1)
 })
 
+test('applicability accepts new labels without a planner or driver switch', () => {
+    const fixture = { name: 'shell-smoke', mode: 'shell-smoke', tags: ['shell'], plugin: 'example' }
+    const kase = { name: 'shell-smoke/entry', mode: 'shell-smoke' }
+    const plugins = new Map([[fixture.name, { name: 'example', version: '1.0.0' }]])
+    const matrix = planMatrix({ fixtures: [fixture], cases: [kase], clis: [cli], plugins })
+    assert.equal(matrix.length, 1)
+    assert.deepEqual(coverage([fixture], [kase], matrix, [{ fixture: fixture.name, case: kase.name }]), [])
+    validateCase({ mode: 'shell-smoke' }, kase.name)
+    assert.throws(() => validateCase({ mode: 'Bad Label' }, 'bad'), /invalid applicability/)
+    assert.match(coverage([fixture], [{ ...kase, mode: 'another-kind' }], [], [])[0], /no applicable case/)
+})
+
 function withDir(fn) {
     const dir = mkdtempSync(path.join(tmpdir(), 'harness-overrides-'))
     try { return fn(dir) } finally { rmSync(dir, { recursive: true, force: true }) }

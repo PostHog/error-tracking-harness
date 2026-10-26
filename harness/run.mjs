@@ -79,34 +79,33 @@ if (!clis.length) {
     const versions = baked.length ? baked : readFileSync(path.join(root, 'cli-versions.txt'), 'utf8').split(/\s+/).filter(Boolean)
     clis.push(...versions.map(cliEntry))
 }
+function dependsOn(fixture, name) {
+    const file = path.join(fixture.dir, 'package.json')
+    if (!existsSync(file)) return false
+    const pkg = JSON.parse(readFileSync(file, 'utf8'))
+    return name in (pkg.dependencies ?? {}) || name in (pkg.devDependencies ?? {})
+}
 let fixtures = loadFixtures(path.join(root, 'fixtures'), list(args.fixtures), list(args.tags))
 if (overrides.packages.size && !args.fixtures && !args.tags) {
-    fixtures = fixtures.filter((fixture) => [...overrides.packages.keys()].some((name) => {
-        const pkg = JSON.parse(readFileSync(path.join(fixture.dir, 'package.json'), 'utf8'))
-        return name in (pkg.dependencies ?? {}) || name in (pkg.devDependencies ?? {})
-    }))
+    fixtures = fixtures.filter((fixture) => [...overrides.packages.keys()].some((name) => dependsOn(fixture, name)))
 }
 if (!fixtures.length) throw new Error('No fixtures selected for overrides')
 const cases = loadCases(path.join(root, 'harness/cases'), args.cases)
 for (const [name] of overrides.packages) {
-    if (!fixtures.some((fixture) => {
-        const pkg = JSON.parse(readFileSync(path.join(fixture.dir, 'package.json'), 'utf8'))
-        return name in (pkg.dependencies ?? {}) || name in (pkg.devDependencies ?? {})
-    })) throw new Error(`Unused override ${name}: selected fixtures ${fixtures.map((fixture) => fixture.name).join(', ')}`)
+    if (!fixtures.some((fixture) => dependsOn(fixture, name))) throw new Error(`Unused override ${name}: selected fixtures ${fixtures.map((fixture) => fixture.name).join(', ')}`)
 }
 for (const fixture of fixtures) {
-    if (!args.list && !existsSync(path.join(fixture.dir, 'node_modules'))) throw new Error(`${fixture.name}: dependencies are missing; run pnpm install:fixtures`)
-    if (fixture.layout === 'pnpm-isolated' && [...overrides.packages.keys()].some((name) => {
-        const pkg = JSON.parse(readFileSync(path.join(fixture.dir, 'package.json'), 'utf8'))
-        return name in (pkg.dependencies ?? {}) || name in (pkg.devDependencies ?? {})
-    })) throw new Error(`${fixture.name}: unsupported override binding in pnpm-isolated layout`)
+    if (!args.list && fixture.lifecycle.workspace.adapter === 'node-modules' && !existsSync(path.join(fixture.dir, 'node_modules'))) throw new Error(`${fixture.name}: dependencies are missing; run pnpm install:fixtures`)
+    if (fixture.layout === 'pnpm-isolated' && [...overrides.packages.keys()].some((name) => dependsOn(fixture, name))) throw new Error(`${fixture.name}: unsupported override binding in pnpm-isolated layout`)
 }
 const plugins = new Map(fixtures.map((fixture) => [fixture.name, selectedPlugin(fixture, overrides.packages, { metadataOnly: args.list })]))
 const matrix = planMatrix({ clis, fixtures, cases, plugins })
 const selected = fixtures.map(({ name, tags }) => ({ name, tags }))
 const provenance = { packages: Object.fromEntries([...overrides.packages].map(([name, entry]) => [name, { version: entry.manifest.version, path: entry.tarball }])), cli: overrides.cli }
 function frameworkFor(fixture) {
-    const pkg = JSON.parse(readFileSync(path.join(fixture.dir, 'package.json'), 'utf8'))
+    const file = path.join(fixture.dir, 'package.json')
+    if (!existsSync(file)) return null
+    const pkg = JSON.parse(readFileSync(file, 'utf8'))
     const name = ['next', 'nuxt', 'vite', 'webpack', 'rollup'].find((candidate) => pkg.dependencies?.[candidate] || pkg.devDependencies?.[candidate])
     if (!name) return null
     const override = overrides.packages.get(name)
@@ -133,10 +132,9 @@ for (const entry of matrix) {
     const label = `${entry.cli.label}/${entry.fixture.name}/${entry.kase.name}`
     const base = { cli: entry.cli.label, cliPath: entry.cli.path, cliVersion: entry.cli.reported ?? entry.cli.version,
         fixture: entry.fixture.name, tags: entry.fixture.tags, case: entry.kase.name, plugin: `${entry.plugin.name}@${entry.plugin.version}`,
-        framework: frameworkFor(entry.fixture), packages: Object.fromEntries([...overrides.packages].filter(([name]) => {
-            const pkg = JSON.parse(readFileSync(path.join(entry.fixture.dir, 'package.json'), 'utf8'))
-            return name in (pkg.dependencies ?? {}) || name in (pkg.devDependencies ?? {})
-        }).map(([name, item]) => [name, { version: item.manifest.version, path: item.tarball }])) }
+        framework: frameworkFor(entry.fixture), packages: Object.fromEntries([...overrides.packages]
+            .filter(([name]) => dependsOn(entry.fixture, name))
+            .map(([name, item]) => [name, { version: item.manifest.version, path: item.tarball }])) }
     if (entry.skipped) {
         results.push({ ...base, ok: false, skipped: entry.skipped, failures: [] })
         console.log(`SKIP ${label}: ${entry.skipped}`)

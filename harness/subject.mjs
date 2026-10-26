@@ -44,7 +44,9 @@ export function loadOverrides(file) {
 }
 
 export function selectedPlugin(fixture, overrides = new Map(), { metadataOnly = false } = {}) {
-    if (!fixture.plugin) return { name: 'posthog-cli', version: 'cli' }
+    if (!fixture.plugin) return fixture.mode === 'cli'
+        ? { name: 'posthog-cli', version: 'cli' }
+        : { name: 'command', version: 'none' }
     const override = overrides.get(fixture.plugin)
     const version = override?.manifest.version ?? (metadataOnly
         ? (manifestAt(path.join(fixture.dir, 'package.json')).devDependencies ?? {})[fixture.plugin]?.replace(/^[^\d]*/, '')
