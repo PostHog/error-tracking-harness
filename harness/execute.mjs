@@ -8,6 +8,7 @@ import { createMockServer } from './mock-server.mjs'
 import { createErrorTrackingApi } from './mock-api.mjs'
 import { collectDist, collectEvents, collectInjection, collectIntegrity, collectSymbolSets, expectedThrows, listDist } from './collect.mjs'
 import { runCommand } from './commands.mjs'
+import { bindsPackage } from './subject.mjs'
 import { prepareWorkspace, runProcess } from './lifecycle.mjs'
 import { runHttpLifecycle } from './runtime-http.mjs'
 import { runBrowser, openPage } from './runtime-browser.mjs'
@@ -193,7 +194,7 @@ export async function executeCase({ cli, fixture, kase, overrides, output }) {
         },
         plugin: null,
         case: kase.name,
-        selection: Object.fromEntries([...overrides ?? []].map(([name, entry]) => [name, entry.tarball])),
+        selection: Object.fromEntries([...overrides ?? []].filter(([name]) => bindsPackage(fixture, name, overrides)).map(([name, entry]) => [name, entry.tarball])),
         throws: null,
         git: null,
         releases: [],
@@ -208,7 +209,8 @@ export async function executeCase({ cli, fixture, kase, overrides, output }) {
         if (kase.git) evidence.git = createRepository(work, kase.git)
         const binPath = `${path.join(work, 'node_modules/.bin')}${path.delimiter}${process.env.PATH}`
         const baseTokens = { work, host, cliPath: cli.path }
-        evidence.plugin = await prepareWorkspace({ fixture, work, overrides, tokens: baseTokens,
+        const applicable = new Map([...overrides].filter(([name]) => bindsPackage(fixture, name, overrides)))
+        evidence.plugin = await prepareWorkspace({ fixture, work, overrides: applicable, tokens: baseTokens,
             env: sandboxEnv(work, { PATH: binPath, POSTHOG_HARNESS_HOST: host, POSTHOG_HARNESS_CLI: cli.path ?? '' }) })
         evidence.throws = expectedThrows(work, fixture)
         const dist = path.join(work, fixture.lifecycle.outputs.root)
