@@ -2,20 +2,21 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import path from 'node:path'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { bindsPackage, prepareNodeModules } from '../subject.mjs'
 import { renderReport } from '../report.mjs'
 
-function pack(dir, name, version, dependencies = {}) {
+function pack(dir, name, version, dependencies = {}, { scripts, payloadSize = 0 } = {}) {
     const folder = path.join(dir, 'package')
     mkdirSync(folder, { recursive: true })
-    writeFileSync(path.join(folder, 'package.json'), JSON.stringify({ name, version, dependencies }))
+    writeFileSync(path.join(folder, 'package.json'), JSON.stringify({ name, version, dependencies, ...(scripts && { scripts }) }))
     writeFileSync(path.join(folder, 'identity.txt'), `${name}@${version}\n`)
+    if (payloadSize) writeFileSync(path.join(folder, 'payload.bin'), Buffer.alloc(payloadSize, 'x'))
     const tarball = path.join(dir, `${name.replaceAll('/', '-')}-${version}.tgz`)
     execFileSync('tar', ['-czf', tarball, '-C', dir, 'package'])
     rmSync(folder, { recursive: true })
-    return { tarball, manifest: { name, version, dependencies } }
+    return { tarball, manifest: { name, version, dependencies, ...(scripts && { scripts }) } }
 }
 
 function setup(dir) {
@@ -64,6 +65,47 @@ test('pruned-store offline install binds transitive core alongside PR plugin and
     assert.match(report, /1\.60\.1/)
 }))
 
+test('offline CLI shim override skips its install script and verifies files larger than 1 MB', () => inDir((dir) => {
+    const { fixtureDir, fixture, coreNew } = setup(dir)
+    const cli = pack(dir, '@posthog/cli', '0.18.11', {}, {
+        scripts: { postinstall: 'exit 1' }, payloadSize: 1_100_000,
+    })
+    const plugin = pack(dir, '@posthog/webpack-plugin', '1.8.0', {
+        '@posthog/core': '^1.60.1', '@posthog/cli': '0.18.11',
+    })
+    const work = path.join(dir, 'work'); mkdirSync(work)
+    for (const file of ['package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml']) writeFileSync(path.join(work, file), readFileSync(path.join(fixtureDir, file)))
+    const result = prepareNodeModules({ fixtureDir, fixture, work,
+        overrides: new Map([['@posthog/webpack-plugin', plugin], ['@posthog/core', coreNew], ['@posthog/cli', cli]]) })
+    assert.equal(result.packages['@posthog/cli'].version, '0.18.11')
+    assert.equal(readFileSync(path.join(result.packages['@posthog/cli'].installedPath, 'payload.bin')).length, 1_100_000)
+}))
+
+test('repeated cells reuse a verified install without sharing mutable node_modules', () => inDir((dir) => {
+    const { fixtureDir, fixture, coreNew, pluginNew } = setup(dir)
+    const declared = JSON.parse(readFileSync(path.join(fixtureDir, 'package.json')))
+    delete declared.devDependencies['@posthog/core']
+    writeFileSync(path.join(fixtureDir, 'package.json'), JSON.stringify(declared))
+    const overrides = new Map([['@posthog/webpack-plugin', pluginNew], ['@posthog/core', coreNew]])
+    const prepare = (name) => {
+        const work = path.join(dir, name); mkdirSync(work)
+        for (const file of ['package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml']) writeFileSync(path.join(work, file), readFileSync(path.join(fixtureDir, file)))
+        return prepareNodeModules({ fixtureDir, fixture, work, overrides })
+    }
+    const first = prepare('first')
+    writeFileSync(path.join(first.packages['@posthog/core'].installedPath, 'identity.txt'), 'mutated by first build\n')
+    const bin = path.join(dir, 'bin'); mkdirSync(bin)
+    writeFileSync(path.join(bin, 'pnpm'), '#!/bin/sh\nexit 42\n'); chmodSync(path.join(bin, 'pnpm'), 0o755)
+    const originalPath = process.env.PATH
+    let second
+    try {
+        process.env.PATH = `${bin}:${originalPath}`
+        second = prepare('second')
+    } finally { process.env.PATH = originalPath }
+    assert.equal(readFileSync(path.join(second.packages['@posthog/core'].installedPath, 'identity.txt'), 'utf8'), '@posthog/core@1.60.1\n')
+    assert.notEqual(first.packages['@posthog/core'].installedPath, second.packages['@posthog/core'].installedPath)
+}))
+
 test('missing offline dependencies fail rather than using the baked version', () => inDir((dir) => {
     const { fixtureDir, fixture, coreNew } = setup(dir)
     const plugin = pack(dir, '@posthog/webpack-plugin', '1.9.0', { '@posthog/core': '^1.60.1', 'not-cached': '^9.0.0' })
@@ -71,6 +113,25 @@ test('missing offline dependencies fail rather than using the baked version', ()
     for (const file of ['package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml']) writeFileSync(path.join(work, file), readFileSync(path.join(fixtureDir, file)))
     assert.throws(() => prepareNodeModules({ fixtureDir, fixture, work,
         overrides: new Map([['@posthog/webpack-plugin', plugin], ['@posthog/core', coreNew]]) }), /offline override install failed|needs not-cached/)
+}))
+
+test('offline install failures report pnpm stdout and exit status', () => inDir((dir) => {
+    const { fixtureDir, fixture, coreNew, pluginNew } = setup(dir)
+    const declared = JSON.parse(readFileSync(path.join(fixtureDir, 'package.json')))
+    delete declared.devDependencies['@posthog/core']
+    writeFileSync(path.join(fixtureDir, 'package.json'), JSON.stringify(declared))
+    const bin = path.join(dir, 'bin'); mkdirSync(bin)
+    writeFileSync(path.join(bin, 'pnpm'), '#!/bin/sh\necho offline-diagnostic\nexit 42\n')
+    chmodSync(path.join(bin, 'pnpm'), 0o755)
+    const work = path.join(dir, 'work'); mkdirSync(work)
+    for (const file of ['package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml']) writeFileSync(path.join(work, file), readFileSync(path.join(fixtureDir, file)))
+    const originalPath = process.env.PATH
+    try {
+        process.env.PATH = `${bin}:${originalPath}`
+        assert.throws(() => prepareNodeModules({ fixtureDir, fixture, work,
+            overrides: new Map([['@posthog/webpack-plugin', pluginNew], ['@posthog/core', coreNew]]) }),
+        /offline override install failed.*exit 42.*offline-diagnostic/s)
+    } finally { process.env.PATH = originalPath }
 }))
 
 test('a same-version tarball hidden by a baked nested dependency is not reported as applied', () => inDir((dir) => {
