@@ -67,6 +67,36 @@ manifest override. Evidence and reports record the applied tarballs, plugin/fram
 and CLI path/version. A new consumer workflow in `posthog-js` must mount its PR-built tarball(s),
 pass `--overrides /subject/overrides.json --tags <relevant-tag>` and require the harness exit code.
 
+## Fixture lifecycle
+
+Every fixture declares `lifecycle.workspace`, `build.argv`, `outputs.root`, `runtime.driver`, and
+`triggers` in `fixture.json`. Commands are argv arrays with an optional workspace-relative `cwd`,
+`env` mapping and `timeoutMs`. Only `{work}`, `{host}` (mock origin), `{port}` (HTTP runtime),
+`{releaseVersion}` and `{cliPath}` are substituted in argv/env values. No shell or package script
+is inferred; use `sh -c` explicitly if needed. The harness supplies `POSTHOG_HARNESS_OPTIONS`,
+`POSTHOG_HARNESS_HOST` and the selected CLI path in its scrubbed environment. For example, a
+POSIX-shell lifecycle smoke fixture can build without `package.json` or `node_modules`:
+
+```json
+{
+  "lifecycle": {
+    "workspace": { "adapter": "command", "command": { "argv": ["sh", "-c", "mkdir -p dist"] } },
+    "build": { "argv": ["sh", "-c", "printf 'artifact' > dist/main.js"] },
+    "outputs": { "root": "dist" },
+    "runtime": { "driver": "process" },
+    "triggers": [{ "kind": "process", "command": { "argv": ["sh", "-c", "echo triggered"] }, "expects": ["entry"] }]
+  }
+}
+```
+
+The manifest also needs a `throws.entry` source marker for validation. This smoke example tests
+preparation/build/runtime plumbing, **not** JS symbolication. Production JS fixtures use the
+`node-modules` workspace adapter, which applies named npm overrides. A command-prepared fixture
+with a selected package override fails without a compatible binding. Non-JS symbol collectors and
+non-npm subject bindings are not yet implemented. Process triggers run explicit argv; HTTP
+triggers declare startup, readiness and routes; browser triggers declare a page and served file
+mapping, with immutable-asset replay available across releases.
+
 ## Fixtures and cases
 
 Each `fixtures/<name>/` is a standalone pinned project with `fixture.json` declaring its plugin,

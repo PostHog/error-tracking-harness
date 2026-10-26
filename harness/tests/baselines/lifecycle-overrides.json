@@ -1,0 +1,62 @@
+[
+  {
+    "fixture": "next-14",
+    "case": "next/baseline-event",
+    "cli": "override",
+    "plugin": {
+      "name": "@posthog/nextjs-config",
+      "version": "1.12.0"
+    },
+    "skipped": null
+  },
+  {
+    "fixture": "next-15",
+    "case": "next/baseline-event",
+    "cli": "override",
+    "plugin": {
+      "name": "@posthog/nextjs-config",
+      "version": "1.12.0"
+    },
+    "skipped": null
+  },
+  {
+    "fixture": "next-16-turbopack",
+    "case": "next/baseline-event",
+    "cli": "override",
+    "plugin": {
+      "name": "@posthog/nextjs-config",
+      "version": "1.12.0"
+    },
+    "skipped": null
+  },
+  {
+    "fixture": "next-16-webpack",
+    "case": "next/baseline-event",
+    "cli": "override",
+    "plugin": {
+      "name": "@posthog/nextjs-config",
+      "version": "1.12.0"
+    },
+    "skipped": null
+  },
+  {
+    "fixture": "vite-8-sri",
+    "case": "baseline/event",
+    "cli": "override",
+    "plugin": {
+      "name": "@posthog/rollup-plugin",
+      "version": "1.6.1"
+    },
+    "skipped": null
+  },
+  {
+    "fixture": "webpack-5.112-sri",
+    "case": "baseline/event",
+    "cli": "override",
+    "plugin": {
+      "name": "@posthog/webpack-plugin",
+      "version": "1.7.1"
+    },
+    "skipped": null
+  }
+]

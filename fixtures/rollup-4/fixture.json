@@ -3,8 +3,13 @@
     "tags": ["rollup"],
     "version": "4.64.7",
     "plugin": "@posthog/rollup-plugin",
-    "entry": "dist/main.mjs",
-    "runtime": "node",
+    "lifecycle": {
+        "workspace": { "adapter": "node-modules" },
+        "build": { "argv": ["node_modules/.bin/rollup", "-c"] },
+        "outputs": { "root": "dist" },
+        "runtime": { "driver": "process" },
+        "triggers": [{ "kind": "process", "command": { "argv": ["node", "dist/main.mjs"] }, "expects": ["entry", "lazy"] }]
+    },
     "throws": {
         "entry": {
             "file": "src/boom.js",

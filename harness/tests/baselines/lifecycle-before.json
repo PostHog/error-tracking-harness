@@ -1,0 +1,626 @@
+{
+  "matrix": [
+    {
+      "fixture": "cli-rollup-4",
+      "case": "cli/process-twice",
+      "cli": "0.18.0",
+      "skip": null
+    },
+    {
+      "fixture": "next-14",
+      "case": "next/baseline-event",
+      "cli": "0.18.0",
+      "skip": null
+    },
+    {
+      "fixture": "next-15",
+      "case": "next/baseline-event",
+      "cli": "0.18.0",
+      "skip": null
+    },
+    {
+      "fixture": "next-16-turbopack",
+      "case": "next/baseline-event",
+      "cli": "0.18.0",
+      "skip": "fixture needs posthog-cli >= 0.18.11"
+    },
+    {
+      "fixture": "next-16-webpack",
+      "case": "next/baseline-event",
+      "cli": "0.18.0",
+      "skip": null
+    },
+    {
+      "fixture": "nuxt-4",
+      "case": "nuxt/baseline",
+      "cli": "0.18.0",
+      "skip": null
+    },
+    {
+      "fixture": "rollup-4",
+      "case": "baseline/event",
+      "cli": "0.18.0",
+      "skip": null
+    },
+    {
+      "fixture": "vite-8",
+      "case": "baseline/event",
+      "cli": "0.18.0",
+      "skip": null
+    },
+    {
+      "fixture": "vite-8-isolated",
+      "case": "baseline/event",
+      "cli": "0.18.0",
+      "skip": null
+    },
+    {
+      "fixture": "vite-8-sri",
+      "case": "baseline/event",
+      "cli": "0.18.0",
+      "skip": null
+    },
+    {
+      "fixture": "webpack-5.112",
+      "case": "baseline/event",
+      "cli": "0.18.0",
+      "skip": null
+    },
+    {
+      "fixture": "webpack-5.112-sri",
+      "case": "baseline/event",
+      "cli": "0.18.0",
+      "skip": null
+    },
+    {
+      "fixture": "cli-rollup-4",
+      "case": "cli/process-twice",
+      "cli": "0.18.11",
+      "skip": null
+    },
+    {
+      "fixture": "next-14",
+      "case": "next/baseline-event",
+      "cli": "0.18.11",
+      "skip": null
+    },
+    {
+      "fixture": "next-15",
+      "case": "next/baseline-event",
+      "cli": "0.18.11",
+      "skip": null
+    },
+    {
+      "fixture": "next-16-turbopack",
+      "case": "next/baseline-event",
+      "cli": "0.18.11",
+      "skip": null
+    },
+    {
+      "fixture": "next-16-webpack",
+      "case": "next/baseline-event",
+      "cli": "0.18.11",
+      "skip": null
+    },
+    {
+      "fixture": "nuxt-4",
+      "case": "nuxt/baseline",
+      "cli": "0.18.11",
+      "skip": null
+    },
+    {
+      "fixture": "rollup-4",
+      "case": "baseline/event",
+      "cli": "0.18.11",
+      "skip": null
+    },
+    {
+      "fixture": "vite-8",
+      "case": "baseline/event",
+      "cli": "0.18.11",
+      "skip": null
+    },
+    {
+      "fixture": "vite-8-isolated",
+      "case": "baseline/event",
+      "cli": "0.18.11",
+      "skip": null
+    },
+    {
+      "fixture": "vite-8-sri",
+      "case": "baseline/event",
+      "cli": "0.18.11",
+      "skip": null
+    },
+    {
+      "fixture": "webpack-5.112",
+      "case": "baseline/event",
+      "cli": "0.18.11",
+      "skip": null
+    },
+    {
+      "fixture": "webpack-5.112-sri",
+      "case": "baseline/event",
+      "cli": "0.18.11",
+      "skip": null
+    }
+  ],
+  "evidence": {
+    "cli": {
+      "fixture": "cli-rollup-4",
+      "case": "cli/process-twice",
+      "verdict": {
+        "ok": true,
+        "failures": []
+      },
+      "releases": [
+        {
+          "build": 0,
+          "runtime": 0,
+          "chunkFiles": [
+            "lazy-Bofa5yRI.mjs",
+            "main.mjs"
+          ],
+          "events": [
+            {
+              "case": "entry",
+              "release": true,
+              "source": "src/boom.js",
+              "line": 3
+            },
+            {
+              "case": "lazy",
+              "release": true,
+              "source": "src/lazy.js",
+              "line": 10
+            }
+          ],
+          "runtimeFields": [
+            "code",
+            "failedRequests",
+            "pageErrors",
+            "replayed",
+            "requests",
+            "signal"
+          ]
+        },
+        {
+          "build": 0,
+          "runtime": 0,
+          "chunkFiles": [
+            "lazy-Bofa5yRI.mjs",
+            "main.mjs"
+          ],
+          "events": [
+            {
+              "case": "entry",
+              "release": true,
+              "source": "src/boom.js",
+              "line": 3
+            },
+            {
+              "case": "lazy",
+              "release": true,
+              "source": "src/lazy.js",
+              "line": 10
+            }
+          ],
+          "runtimeFields": [
+            "code",
+            "failedRequests",
+            "pageErrors",
+            "replayed",
+            "requests",
+            "signal"
+          ]
+        }
+      ],
+      "afterFinalUpload": [
+        "entry",
+        "lazy"
+      ]
+    },
+    "rollup": {
+      "fixture": "rollup-4",
+      "case": "baseline/event",
+      "verdict": {
+        "ok": true,
+        "failures": []
+      },
+      "releases": [
+        {
+          "build": 0,
+          "runtime": 0,
+          "chunkFiles": [
+            "lazy-Cmmd7WKa.mjs",
+            "main.mjs"
+          ],
+          "events": [
+            {
+              "case": "entry",
+              "release": true,
+              "source": "src/boom.js",
+              "line": 3
+            },
+            {
+              "case": "lazy",
+              "release": true,
+              "source": "src/lazy.js",
+              "line": 10
+            }
+          ],
+          "runtimeFields": [
+            "code",
+            "failedRequests",
+            "pageErrors",
+            "replayed",
+            "requests",
+            "signal"
+          ]
+        },
+        {
+          "build": 0,
+          "runtime": 0,
+          "chunkFiles": [
+            "lazy-DlJ_1Nul.mjs",
+            "main.mjs"
+          ],
+          "events": [
+            {
+              "case": "entry",
+              "release": true,
+              "source": "src/boom.js",
+              "line": 3
+            },
+            {
+              "case": "lazy",
+              "release": true,
+              "source": "src/lazy.js",
+              "line": 10
+            }
+          ],
+          "runtimeFields": [
+            "code",
+            "failedRequests",
+            "pageErrors",
+            "replayed",
+            "requests",
+            "signal"
+          ]
+        }
+      ],
+      "afterFinalUpload": [
+        "entry",
+        "lazy"
+      ]
+    },
+    "viteSri": {
+      "fixture": "vite-8-sri",
+      "case": "baseline/event",
+      "verdict": {
+        "ok": true,
+        "failures": []
+      },
+      "releases": [
+        {
+          "build": 0,
+          "runtime": 0,
+          "chunkFiles": [
+            "assets/index-Vs8qtqQ8.js",
+            "assets/lazy-DdvpUpT6.js"
+          ],
+          "events": [
+            {
+              "case": "entry",
+              "release": true,
+              "source": "src/boom.js",
+              "line": 3
+            },
+            {
+              "case": "lazy",
+              "release": true,
+              "source": "src/lazy.js",
+              "line": 10
+            }
+          ],
+          "runtimeFields": [
+            "code",
+            "failedRequests",
+            "pageErrors",
+            "replayed",
+            "requests",
+            "signal"
+          ]
+        },
+        {
+          "build": 0,
+          "runtime": 0,
+          "chunkFiles": [
+            "assets/index-BRw-GU9t.js",
+            "assets/lazy-BG5k-XXE.js"
+          ],
+          "events": [
+            {
+              "case": "entry",
+              "release": true,
+              "source": "src/boom.js",
+              "line": 3
+            },
+            {
+              "case": "lazy",
+              "release": true,
+              "source": "src/lazy.js",
+              "line": 10
+            }
+          ],
+          "runtimeFields": [
+            "code",
+            "failedRequests",
+            "pageErrors",
+            "replayed",
+            "requests",
+            "signal"
+          ]
+        }
+      ],
+      "afterFinalUpload": [
+        "entry",
+        "lazy"
+      ]
+    },
+    "next": {
+      "fixture": "next-15",
+      "case": "next/baseline-event",
+      "verdict": {
+        "ok": false,
+        "failures": [
+          "release <version>: no previous-release asset was replayed to the browser"
+        ]
+      },
+      "releases": [
+        {
+          "build": 0,
+          "runtime": 0,
+          "chunkFiles": [
+            "server/app/_not-found/page.js",
+            "server/app/client/page.js",
+            "server/app/page.js",
+            "server/chunks/223.js",
+            "server/chunks/455.js",
+            "server/chunks/659.js",
+            "server/chunks/992.js",
+            "server/pages/_app.js",
+            "server/pages/_document.js",
+            "server/pages/_error.js",
+            "server/pages/api/throw.js",
+            "server/webpack-api-runtime.js",
+            "server/webpack-runtime.js",
+            "static/chunks/2b455bfb-cd3cc4678f158e68.js",
+            "static/chunks/302-b128fc0805ae1ce1.js",
+            "static/chunks/443.9df4b07442d043e3.js",
+            "static/chunks/767c31da-e61598da07a9443f.js",
+            "static/chunks/app/_not-found/page-26609c7f32d6f5aa.js",
+            "static/chunks/app/client/page-57103d3552028c34.js",
+            "static/chunks/app/layout-078f995c9e73431a.js",
+            "static/chunks/app/page-078f995c9e73431a.js",
+            "static/chunks/framework-695850f3a5fa77db.js",
+            "static/chunks/main-32b31d0b62a7ea33.js",
+            "static/chunks/main-app-6e22230001ee1a2a.js",
+            "static/chunks/pages/_app-bff26b8ade53e558.js",
+            "static/chunks/pages/_error-fbd7373e3587c1b2.js",
+            "static/chunks/webpack-0d39909a30887bb9.js"
+          ],
+          "events": [
+            {
+              "case": "browser-entry",
+              "release": true,
+              "source": "lib/boom.js",
+              "line": 3
+            },
+            {
+              "case": "browser-lazy",
+              "release": true,
+              "source": "lib/lazy.js",
+              "line": 10
+            },
+            {
+              "case": "entry",
+              "release": true,
+              "source": "lib/boom.js",
+              "line": 3
+            },
+            {
+              "case": "lazy",
+              "release": true,
+              "source": "lib/lazy.js",
+              "line": 10
+            }
+          ],
+          "runtimeFields": [
+            "code",
+            "failedRequests",
+            "pageErrors",
+            "replayed",
+            "requests",
+            "signal"
+          ]
+        },
+        {
+          "build": 0,
+          "runtime": 0,
+          "chunkFiles": [
+            "server/app/_not-found/page.js",
+            "server/app/client/page.js",
+            "server/app/page.js",
+            "server/chunks/223.js",
+            "server/chunks/455.js",
+            "server/chunks/659.js",
+            "server/chunks/992.js",
+            "server/pages/_app.js",
+            "server/pages/_document.js",
+            "server/pages/_error.js",
+            "server/pages/api/throw.js",
+            "server/webpack-api-runtime.js",
+            "server/webpack-runtime.js",
+            "static/chunks/2b455bfb-553fd8c9797e8f02.js",
+            "static/chunks/302-c32e4e1e58447576.js",
+            "static/chunks/443.8a0e5ce6a8054d1f.js",
+            "static/chunks/767c31da-5c78ce86f4e1d66a.js",
+            "static/chunks/app/_not-found/page-9f7aa328b93b7ab3.js",
+            "static/chunks/app/client/page-08e57bf309987370.js",
+            "static/chunks/app/layout-078f995c9e73431a.js",
+            "static/chunks/app/page-078f995c9e73431a.js",
+            "static/chunks/framework-380ca1f1985bdf0f.js",
+            "static/chunks/main-9ab66edb434eacc8.js",
+            "static/chunks/main-app-ff4c0e9021a6f388.js",
+            "static/chunks/pages/_app-89678e958adf3006.js",
+            "static/chunks/pages/_error-05329d06ba981f66.js",
+            "static/chunks/webpack-084872aa3d9b18b9.js"
+          ],
+          "events": [
+            {
+              "case": "browser-entry",
+              "release": true,
+              "source": "lib/boom.js",
+              "line": 3
+            },
+            {
+              "case": "browser-lazy",
+              "release": true,
+              "source": "lib/lazy.js",
+              "line": 10
+            },
+            {
+              "case": "entry",
+              "release": true,
+              "source": "lib/boom.js",
+              "line": 3
+            },
+            {
+              "case": "lazy",
+              "release": true,
+              "source": "lib/lazy.js",
+              "line": 10
+            }
+          ],
+          "runtimeFields": [
+            "code",
+            "failedRequests",
+            "pageErrors",
+            "replayed",
+            "requests",
+            "signal"
+          ]
+        }
+      ],
+      "afterFinalUpload": [
+        "browser-entry",
+        "browser-lazy",
+        "entry",
+        "lazy"
+      ]
+    },
+    "nuxt": {
+      "fixture": "nuxt-4",
+      "case": "nuxt/baseline",
+      "verdict": {
+        "ok": true,
+        "failures": []
+      },
+      "releases": [
+        {
+          "build": 0,
+          "runtime": 0,
+          "chunkFiles": [
+            "public/_nuxt/BhSmpOTG.js",
+            "public/_nuxt/a5lOB6l2.js",
+            "public/_nuxt/k7n9MKeu.js",
+            "server/chunks/_/error-template.mjs",
+            "server/chunks/_/lazy.mjs",
+            "server/chunks/build/error-404-DiAJcyIT.mjs",
+            "server/chunks/build/error-404-styles.Yt1D5A5r.mjs",
+            "server/chunks/build/error-500-0bGH5Krj.mjs",
+            "server/chunks/build/error-500-styles.DGDSAHwy.mjs",
+            "server/chunks/nitro/nitro.mjs",
+            "server/chunks/routes/api/throw.get.mjs",
+            "server/chunks/routes/renderer.mjs",
+            "server/chunks/virtual/entry.mjs",
+            "server/chunks/virtual/precomputed.mjs",
+            "server/chunks/virtual/styles.mjs",
+            "server/index.mjs"
+          ],
+          "events": [
+            {
+              "case": "entry",
+              "release": true,
+              "source": "lib/boom.js",
+              "line": 3
+            },
+            {
+              "case": "lazy",
+              "release": true,
+              "source": "lib/lazy.js",
+              "line": 10
+            }
+          ],
+          "runtimeFields": [
+            "code",
+            "failedRequests",
+            "pageErrors",
+            "replayed",
+            "requests",
+            "signal"
+          ]
+        },
+        {
+          "build": 0,
+          "runtime": 0,
+          "chunkFiles": [
+            "public/_nuxt/BhSmpOTG.js",
+            "public/_nuxt/a5lOB6l2.js",
+            "public/_nuxt/k7n9MKeu.js",
+            "server/chunks/_/error-template.mjs",
+            "server/chunks/_/lazy.mjs",
+            "server/chunks/build/error-404-DiAJcyIT.mjs",
+            "server/chunks/build/error-404-styles.Yt1D5A5r.mjs",
+            "server/chunks/build/error-500-0bGH5Krj.mjs",
+            "server/chunks/build/error-500-styles.DGDSAHwy.mjs",
+            "server/chunks/nitro/nitro.mjs",
+            "server/chunks/routes/api/throw.get.mjs",
+            "server/chunks/routes/renderer.mjs",
+            "server/chunks/virtual/entry.mjs",
+            "server/chunks/virtual/precomputed.mjs",
+            "server/chunks/virtual/styles.mjs",
+            "server/index.mjs"
+          ],
+          "events": [
+            {
+              "case": "entry",
+              "release": true,
+              "source": "lib/boom.js",
+              "line": 3
+            },
+            {
+              "case": "lazy",
+              "release": true,
+              "source": "lib/lazy.js",
+              "line": 10
+            }
+          ],
+          "runtimeFields": [
+            "code",
+            "failedRequests",
+            "pageErrors",
+            "replayed",
+            "requests",
+            "signal"
+          ]
+        }
+      ],
+      "afterFinalUpload": [
+        "entry",
+        "lazy"
+      ]
+    }
+  }
+}

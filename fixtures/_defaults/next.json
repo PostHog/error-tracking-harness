@@ -1,7 +1,6 @@
 {
     "mode": "next",
     "plugin": "@posthog/nextjs-config",
-    "dist": ".next",
     "distGlobs": [
         "static/chunks/**/*.js",
         "server/**/*.js",
@@ -13,15 +12,20 @@
         "server/**/*-manifest.js",
         "server/**/*_client-reference-manifest.js"
     ],
-    "runtime": {
-        "kind": "http",
-        "start": "next start",
-        "paths": ["/api/throw"],
-        "browser": {
-            "page": "/client",
-            "urlPrefix": "/_next/",
-            "root": ".next"
-        }
+    "lifecycle": {
+        "workspace": { "adapter": "node-modules" },
+        "build": { "argv": ["node_modules/.bin/next", "build"] },
+        "outputs": { "root": ".next" },
+        "runtime": {
+            "driver": "http",
+            "start": { "argv": ["node_modules/.bin/next", "start", "-p", "{port}", "-H", "127.0.0.1"] },
+            "ready": { "path": "/" },
+            "browser": { "page": "/client", "urlPrefix": "/_next/", "root": ".next" }
+        },
+        "triggers": [
+            { "kind": "http", "path": "/api/throw", "expects": ["entry", "lazy"] },
+            { "kind": "browser", "page": "/client", "expects": ["browser-entry", "browser-lazy"] }
+        ]
     },
     "cliSelection": "edges",
     "throws": {

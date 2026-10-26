@@ -3,16 +3,17 @@
     "tags": ["webpack","browser","sri"],
     "version": "5.112.0",
     "plugin": "@posthog/webpack-plugin",
-    "dist": "dist",
     "distGlobs": [
         "**/*.js",
         "**/*.map"
     ],
     "integrity": "dist/index.html",
-    "runtime": {
-        "kind": "browser",
-        "serve": "dist",
-        "page": "/index.html"
+    "lifecycle": {
+        "workspace": { "adapter": "node-modules" },
+        "build": { "argv": ["node_modules/.bin/webpack"] },
+        "outputs": { "root": "dist" },
+        "runtime": { "driver": "browser", "serve": "dist" },
+        "triggers": [{ "kind": "browser", "page": "/index.html", "expects": ["entry", "lazy"] }]
     },
     "throws": {
         "entry": {

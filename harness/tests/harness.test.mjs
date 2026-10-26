@@ -18,14 +18,14 @@ test('fixture defaults resolve without installed dependencies', () => {
     assert.ok(fixtures.length >= 12)
     const next = fixtures.find((fixture) => fixture.name === 'next-14')
     const turbo = fixtures.find((fixture) => fixture.name === 'next-16-turbopack')
-    assert.equal(next.runtime.kind, 'http')
+    assert.equal(next.lifecycle.runtime.driver, 'http')
     assert.equal(next.plugin, '@posthog/nextjs-config')
     assert.equal(next.throws.lazy.file, 'lib/lazy.js')
     assert.equal(next.distIgnore.length, 3)
-    assert.equal(next.runtime.browser.page, '/client')
+    assert.equal(next.lifecycle.runtime.browser.page, '/client')
     assert.equal(next.throws['browser-entry'].file, 'lib/boom.js')
     assert.equal(next.immutable, 'static/**')
-    assert.equal(fixtures.find((fixture) => fixture.name === 'vite-8-sri').runtime.kind, 'browser')
+    assert.equal(fixtures.find((fixture) => fixture.name === 'vite-8-sri').lifecycle.runtime.driver, 'browser')
     assert.equal(turbo.distIgnore.length, 3)
     assert.ok(loadCases(path.join(root, 'harness/cases')).length >= 15)
 })
@@ -107,7 +107,7 @@ test('executeCase keeps a failed workspace and closes servers', async () => {
         const output = path.join(dir, 'output')
         mkdirSync(fixtureDir)
         await assert.rejects(executeCase({
-            cli: { label: 'test' }, fixture: { name: 'test', dir: fixtureDir, mode: 'cli', entry: 'dist/main.js' },
+            cli: { label: 'test' }, fixture: { name: 'test', dir: fixtureDir, mode: 'cli', lifecycle: { workspace: { adapter: 'node-modules' }, runtime: { driver: 'process' } } },
             kase: { name: 'test' }, selection: 'latest', subject: new Map(), output,
         }))
         work = readFileSync(path.join(output, 'workspace.txt'), 'utf8').trim()
