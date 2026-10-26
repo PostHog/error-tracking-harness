@@ -25,10 +25,8 @@ COPY fixtures/vite-8-sri/package.json fixtures/vite-8-sri/pnpm-workspace.yaml fi
 COPY fixtures/webpack-5.112-sri/package.json fixtures/webpack-5.112-sri/pnpm-workspace.yaml fixtures/webpack-5.112-sri/pnpm-lock.yaml fixtures/webpack-5.112-sri/
 # Build scripts run only where a fixture's pnpm-workspace.yaml allows them: @posthog/cli's
 # postinstall, which downloads the binary the plugins resolve when given no path.
-# Retain pnpm's offline package metadata and tarballs. Transitive subject overrides
-# re-resolve fixture lockfiles at run time with --network none; pruning the store
-# can remove metadata needed even for unchanged pinned framework dependencies.
-RUN for fixture in fixtures/*/; do (cd "$fixture" && pnpm install --frozen-lockfile); done
+RUN for fixture in fixtures/*/; do (cd "$fixture" && pnpm install --frozen-lockfile); done \
+    && pnpm store prune
 # pnpm runs a package's build script once and reuses the package from its store for the next
 # fixture without the files that script produced, so each fixture's shim must be checked and
 # rebuilt where the binary is missing. A fixture without @posthog/cli (cli mode) has no shim.

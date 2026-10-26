@@ -1,8 +1,7 @@
 // Local, named package overrides replace only the requested installed dependencies. All other
 // packages stay pinned to the fixture's offline node_modules tree.
 import { execFileSync } from 'node:child_process'
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { satisfies } from './semver.mjs'
 
@@ -56,18 +55,6 @@ export function selectedPlugin(fixture, overrides = new Map(), { metadataOnly = 
     return { name: fixture.plugin, version }
 }
 
-// Every CLI/case cell gets its own writable node_modules, but the same fixture and
-// immutable tarballs need dependency resolution only once per harness process.
-const preparedInstalls = new Map()
-let preparedRoot
-function cacheInstall(key, source) {
-    preparedRoot ??= mkdtempSync(path.join(tmpdir(), 'harness-prepared-'))
-    const directory = path.join(preparedRoot, String(preparedInstalls.size))
-    copyTree(source, directory)
-    preparedInstalls.set(key, directory)
-}
-process.on('exit', () => { if (preparedRoot) rmSync(preparedRoot, { recursive: true, force: true }) })
-
 function copyTree(source, destination) {
     try {
         execFileSync('cp', [...(process.platform === 'darwin' ? ['-RPc'] : ['-RP', '--reflink=auto']), source, destination], { stdio: 'pipe' })
@@ -105,21 +92,18 @@ function boundPackage(nodeModules, name, from) {
 
 // Check the actual bytes, not just the declared version: a tarball can have the same version as
 // the image's pinned package. Checking every packed file also detects an unchanged baked install.
-function verifyTarball(name, entry, destination, fixture, { verifyBytes = true } = {}) {
+function verifyTarball(name, entry, destination, fixture) {
     if (!destination) throw new Error(`${fixture.name}: override ${name} was not bound in node_modules`)
     const installed = manifestAt(path.join(destination, 'package.json'))
     if (installed.name !== name || installed.version !== entry.manifest.version) throw new Error(`${fixture.name}: override ${name} resolved to ${installed.name}@${installed.version} at ${destination}, expected ${entry.manifest.version}`)
-    // Cached installs were byte-verified before being copied into an immutable template.
-    if (verifyBytes) {
-        const files = execFileSync('tar', ['-tzf', entry.tarball], { encoding: 'utf8' }).trim().split('\n')
-        for (const file of files) {
-            if (!file.startsWith('package/') || file.endsWith('/')) continue
-            const relative = file.slice('package/'.length)
-            if (!relative || relative.split('/').includes('..')) throw new Error(`${name}: invalid tarball member ${file}`)
-            const unpacked = path.join(destination, relative)
-            const packed = execFileSync('tar', ['-xzOf', entry.tarball, file], { maxBuffer: 64 * 1024 * 1024 })
-            if (!existsSync(unpacked) || !readFileSync(unpacked).equals(packed)) throw new Error(`${fixture.name}: override ${name} was not installed from ${entry.tarball} at ${destination} (${relative} differs)`)
-        }
+    const files = execFileSync('tar', ['-tzf', entry.tarball], { encoding: 'utf8' }).trim().split('\n')
+    for (const file of files) {
+        if (!file.startsWith('package/') || file.endsWith('/')) continue
+        const relative = file.slice('package/'.length)
+        if (!relative || relative.split('/').includes('..')) throw new Error(`${name}: invalid tarball member ${file}`)
+        const unpacked = path.join(destination, relative)
+        const packed = execFileSync('tar', ['-xzOf', entry.tarball, file])
+        if (!existsSync(unpacked) || !readFileSync(unpacked).equals(packed)) throw new Error(`${fixture.name}: override ${name} was not installed from ${entry.tarball} at ${destination} (${relative} differs)`)
     }
     return { version: installed.version, path: entry.tarball, installedPath: realpathSync(destination) }
 }
@@ -133,10 +117,7 @@ export function prepareNodeModules({ fixtureDir, fixture, work, overrides = new 
     const transitive = applied.some(([name]) => !(name in (declared.dependencies ?? {}) || name in (declared.devDependencies ?? {})))
     for (const [name] of applied) if (!transitive && !installedVersion(installed, name)) throw new Error(`${fixture.name}: override ${name} is declared but not installed`)
     if (applied.length && fixture.layout === 'pnpm-isolated') throw new Error(`${fixture.name}: unsupported override binding in pnpm-isolated layout`)
-    const transitiveKey = transitive ? JSON.stringify([fixtureDir, applied.map(([name, entry]) => [name, entry.tarball, entry.manifest.version])]) : null
-    const cached = transitiveKey && preparedInstalls.get(transitiveKey)
-    if (cached) copyTree(cached, nodeModules)
-    else if (fixture.nodeModules === 'copy' || applied.length) copyTree(installed, nodeModules)
+    if (fixture.nodeModules === 'copy' || applied.length) copyTree(installed, nodeModules)
     else {
         mkdirSync(nodeModules)
         for (const entry of readdirSync(installed, { withFileTypes: true })) {
@@ -147,7 +128,7 @@ export function prepareNodeModules({ fixtureDir, fixture, work, overrides = new 
             } else symlinkSync(source, path.join(nodeModules, entry.name), 'dir')
         }
     }
-    if (transitive && !cached) {
+    if (transitive) {
         // pnpm rewires the *whole graph* (including a plugin's nested core), using only the
         // image's store and mounted tarballs. Never write the lockfile in the baked fixture.
         const config = path.join(work, 'pnpm-workspace.yaml')
@@ -163,18 +144,11 @@ export function prepareNodeModules({ fixtureDir, fixture, work, overrides = new 
         }
         writeFileSync(path.join(work, 'package.json'), JSON.stringify(declared, null, 2) + '\n')
         try {
-            // The selected CLI executable is passed explicitly to the plugins. The npm shim's
-            // postinstall downloads a binary, so keep scripts disabled without treating the
-            // intentionally skipped build as an installation failure.
-            execFileSync('pnpm', ['install', '--offline', '--no-frozen-lockfile', '--ignore-scripts', '--config.strict-dep-builds=false'], {
+            execFileSync('pnpm', ['install', '--offline', '--no-frozen-lockfile', '--ignore-scripts'], {
                 cwd: work, env: { ...process.env, CI: 'true' }, encoding: 'utf8', stdio: 'pipe', timeout: 180_000,
             })
         } catch (error) {
-            // pnpm prints resolution errors and progress on stdout. execFileSync's timeout
-            // also leaves stderr empty, so always include the exit status and both streams.
-            const output = [error.stdout, error.stderr].filter(Boolean).map((part) => String(part).trim()).filter(Boolean).join('\n')
-            const status = error.signal ? `signal ${error.signal}` : `exit ${error.status ?? error.code ?? 'unknown'}`
-            throw new Error(`${fixture.name}: offline override install failed (${applied.map(([name]) => name).join(', ')}, ${status}): ${output.slice(-2000) || error.message}`)
+            throw new Error(`${fixture.name}: offline override install failed (${applied.map(([name]) => name).join(', ')}): ${String(error.stderr ?? error.message).trim().slice(-1500)}`)
         }
     }
     if (fixture.plugin && !overrides.has(fixture.plugin)) {
@@ -202,16 +176,14 @@ export function prepareNodeModules({ fixtureDir, fixture, work, overrides = new 
         const dependent = applied.find(([parent, item]) => parent !== name && name in (item.manifest.dependencies ?? {}))?.[0]
         const destination = boundPackage(nodeModules, name, dependent ? path.join(nodeModules, dependent) : pluginDir)
             ?? boundPackage(nodeModules, name, work)
-        return [name, verifyTarball(name, entry, destination, fixture, { verifyBytes: !cached })]
+        return [name, verifyTarball(name, entry, destination, fixture)]
     }))
     for (const [parent, entry] of applied) {
         for (const name of Object.keys(entry.manifest.dependencies ?? {})) {
             if (!packages[name]) continue
-            verifyTarball(name, overrides.get(name), boundPackage(nodeModules, name, path.join(nodeModules, parent)), fixture, { verifyBytes: !cached })
+            verifyTarball(name, overrides.get(name), boundPackage(nodeModules, name, path.join(nodeModules, parent)), fixture)
         }
     }
-    // Cache only a successfully verified install, before a fixture build can mutate it.
-    if (transitiveKey && !cached) cacheInstall(transitiveKey, nodeModules)
     const framework = ['next', 'nuxt', 'vite', 'webpack', 'rollup'].find((name) => installedVersion(nodeModules, name))
     const frameworkInfo = framework && { name: framework, version: installedVersion(nodeModules, framework), path: packages[framework]?.path ?? null, installedPath: realpathSync(path.join(nodeModules, framework)) }
     if (!fixture.plugin) return { name: 'posthog-cli', version: 'cli', source: 'pinned', packages, framework: frameworkInfo }

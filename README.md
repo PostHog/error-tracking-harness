@@ -70,18 +70,12 @@ packed core tarball in the same manifest, for example:
 }
 ```
 
-Mount the tarballs under `/subject` with the manifest. The harness retains the image's pnpm
-store and uses it plus those tarballs to reinstall the affected dependency graph with `pnpm
-install --offline`; it never fetches packages at run time. Prepared dependency graphs are
-reused across cases and CLI versions of the same fixture, but each case gets its own writable
-copy of `node_modules`. If a PR needs a dependency absent from the image's store, pack and
-override that package too or update the image's pinned lockfiles.
-
-`@posthog/cli` is an npm dependency/shim, distinct from the CLI executable selected with
-`binaries.posthog-cli` or `--cli-binary`. When PR-built plugins require a newer npm shim than
-the fixtures pin, pack that exact npm version **before** the offline run and list its tarball
-under `packages` as `"@posthog/cli"`. The harness skips its networked postinstall and supplies
-the chosen CLI executable separately; use the binary field only for that executable.
+Mount all three tarballs under `/subject` with the manifest. The harness uses the fixture's
+pruned pnpm store plus those tarballs to reinstall the affected dependency graph with `pnpm
+install --offline`; it never fetches packages at run time. If the PR needs another dependency
+absent from the image's store, pack and override that package too or update the image's pinned
+lockfiles. `@posthog/cli` is an npm dependency/shim, distinct from the CLI executable selected
+with `binaries.posthog-cli` or `--cli-binary`. Only use the binary field for the executable.
 Installed paths and versions in per-cell evidence/report are verified against tarball contents;
 requested but failed overrides are not listed as applied.
 
