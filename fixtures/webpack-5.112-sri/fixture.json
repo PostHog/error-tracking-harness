@@ -1,9 +1,8 @@
 {
     "bundler": "webpack",
+    "tags": ["webpack","browser","sri"],
     "version": "5.112.0",
     "plugin": "@posthog/webpack-plugin",
-    "floorAlias": "posthog-webpack-plugin-floor",
-    "minPlugin": "1.7.1",
     "dist": "dist",
     "distGlobs": [
         "**/*.js",

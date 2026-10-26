@@ -1,131 +1,109 @@
-// Which plugin a case runs against: the fixture's latest pin, its floor alias, or tarballs mounted
-// at /subject. Each case works in a copy of the fixture whose node_modules holds symlinks into
-// the installed tree, so swapping a package means replacing one top-level entry. Fixtures use
-// pnpm's hoisted linker, which keeps every package at the top level where that swap works.
+// Local, named package overrides replace only the requested installed dependencies. All other
+// packages stay pinned to the fixture's offline node_modules tree.
 import { execFileSync } from 'node:child_process'
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync } from 'node:fs'
 import path from 'node:path'
 import { satisfies } from './semver.mjs'
 
-// Every case passes `cliBinaryPath`, so the npm package the plugins declare is never used and
-// its range need not hold. The binaries baked into the image are the CLI dimension.
 const UNCHECKED = new Set(['@posthog/cli'])
+const manifestAt = (file) => JSON.parse(readFileSync(file, 'utf8'))
+export function installedVersion(nodeModules, name) {
+    const file = path.join(nodeModules, name, 'package.json')
+    return existsSync(file) ? manifestAt(file).version : undefined
+}
 
-/** Reads the tarballs in `dir`: name → { tarball, manifest }. */
-export function loadSubject(dir) {
-    const subject = new Map()
-    if (!dir || !existsSync(dir)) return subject
-    for (const file of readdirSync(dir)) {
-        if (!file.endsWith('.tgz')) continue
-        const tarball = path.join(dir, file)
+/** Manifest: { "packages": { "npm-name": "./local.tgz" }, "binaries": { "posthog-cli": "./posthog-cli" } }. */
+export function loadOverrides(file) {
+    if (!file) return { packages: new Map(), cli: null }
+    const config = manifestAt(file)
+    if (!config || Array.isArray(config) || typeof config !== 'object' || Object.keys(config).some((key) => !['packages', 'binaries', 'cli'].includes(key))) throw new Error(`Invalid overrides manifest ${file}`)
+    if (config.packages && (typeof config.packages !== 'object' || Array.isArray(config.packages))) throw new Error(`Invalid packages in ${file}`)
+    if (config.binaries && (typeof config.binaries !== 'object' || Array.isArray(config.binaries) || Object.keys(config.binaries).some((name) => name !== 'posthog-cli'))) throw new Error(`Invalid binaries in ${file}`)
+    if (config.cli && config.binaries?.['posthog-cli']) throw new Error('Conflicting CLI overrides')
+    const packages = new Map()
+    for (const [name, location] of Object.entries(config.packages ?? {})) {
+        if (typeof location !== 'string') throw new Error(`${name}: override must be a tarball path`)
+        const tarball = path.resolve(path.dirname(file), location)
+        if (!existsSync(tarball) || !statSync(tarball).isFile()) throw new Error(`${name}: missing override tarball ${tarball}`)
         const manifest = JSON.parse(execFileSync('tar', ['-xzOf', tarball, 'package/package.json'], { encoding: 'utf8' }))
-        subject.set(manifest.name, { tarball, manifest })
+        if (manifest.name !== name || !manifest.version) throw new Error(`${tarball}: expected package ${name}, found ${manifest.name}`)
+        packages.set(name, { tarball, manifest })
     }
-    return subject
+    let cli = null
+    const cliLocation = config.binaries?.['posthog-cli'] ?? config.cli
+    if (cliLocation) {
+        if (typeof cliLocation !== 'string') throw new Error('CLI override must be a local executable path')
+        const binary = path.resolve(path.dirname(file), cliLocation)
+        if (!existsSync(binary) || !statSync(binary).isFile() || !(statSync(binary).mode & 0o111)) throw new Error(`CLI override is missing or not executable: ${binary}`)
+        const reported = execFileSync(binary, ['--version'], { encoding: 'utf8' }).trim()
+        if (!/posthog-cli\s+v?\d+\.\d+\.\d+/i.test(reported)) throw new Error(`CLI override ${binary} reported invalid version: ${reported}`)
+        cli = { label: 'override', version: 'custom', reported, path: binary }
+    }
+    if (!packages.size && !cli) throw new Error(`No overrides in ${file}`)
+    return { packages, cli }
 }
 
-function installedVersion(nodeModules, name) {
-    const manifest = path.join(nodeModules, name, 'package.json')
-    return existsSync(manifest) ? JSON.parse(readFileSync(manifest, 'utf8')).version : undefined
-}
-
-/** The plugin version a selection would put in place, known before anything is built. */
-export function selectedPlugin(fixture, selection, subject, { metadataOnly = false } = {}) {
-    // A cli-mode fixture has no plugin; the CLI under test is the matrix's own dimension.
+export function selectedPlugin(fixture, overrides = new Map(), { metadataOnly = false } = {}) {
     if (!fixture.plugin) return { name: 'posthog-cli', version: 'cli' }
-    const installed = path.join(fixture.dir, 'node_modules')
-    if (selection === 'subject') {
-        const entry = subject.get(fixture.plugin)
-        if (!entry) throw new Error(`subject has no tarball for ${fixture.plugin}`)
-        return { name: fixture.plugin, version: entry.manifest.version }
-    }
-    const name = selection === 'floor' ? fixture.floorAlias : fixture.plugin
-    const version = metadataOnly
-        ? (JSON.parse(readFileSync(path.join(fixture.dir, 'package.json'), 'utf8')).devDependencies ?? {})[name]?.split('@').at(-1)
-        : installedVersion(installed, name)
-    if (!version) throw new Error(`${fixture.name}: ${name} is not ${metadataOnly ? 'declared' : 'installed'}; run pnpm install in fixtures/${fixture.name}`)
+    const override = overrides.get(fixture.plugin)
+    const version = override?.manifest.version ?? (metadataOnly
+        ? (manifestAt(path.join(fixture.dir, 'package.json')).devDependencies ?? {})[fixture.plugin]?.replace(/^[^\d]*/, '')
+        : installedVersion(path.join(fixture.dir, 'node_modules'), fixture.plugin))
+    if (!version) throw new Error(`${fixture.name}: ${fixture.plugin} is not ${metadataOnly ? 'declared' : 'installed'}`)
     return { name: fixture.plugin, version }
 }
 
 function copyTree(source, destination) {
-    // -P keeps symlinks as symlinks (GNU cp -l would otherwise hardlink what .bin shims point at).
-    const attempts = process.platform === 'darwin' ? [['cp', ['-RPc', source, destination]]] : [['cp', ['-RPl', source, destination]]]
-    for (const [command, args] of attempts) {
-        try {
-            execFileSync(command, args, { stdio: 'pipe' })
-            return
-        } catch {
-            rmSync(destination, { recursive: true, force: true })
-        }
+    try {
+        execFileSync('cp', [process.platform === 'darwin' ? '-RPc' : '-RPl', source, destination], { stdio: 'pipe' })
+    } catch {
+        rmSync(destination, { recursive: true, force: true })
+        cpSync(source, destination, { recursive: true, verbatimSymlinks: true })
     }
-    cpSync(source, destination, { recursive: true, verbatimSymlinks: true })
 }
 
-function link(target, destination) {
-    symlinkSync(target, destination, 'dir')
-}
-
-/**
- * Builds `<work>/node_modules` for one case and returns the plugin actually in use.
- * `selection` is 'latest' | 'floor' | 'subject'.
- */
-export function prepareNodeModules({ fixtureDir, fixture, work, selection, subject }) {
+export function prepareNodeModules({ fixtureDir, fixture, work, overrides = new Map() }) {
     const installed = path.join(fixtureDir, 'node_modules')
     const nodeModules = path.join(work, 'node_modules')
-    if (fixture.nodeModules === 'copy') {
-        // Turbopack refuses packages whose real path lies outside the workspace, so symlinks
-        // into the installed tree will not do. A clone (APFS) or hardlink copy costs nothing.
-        copyTree(installed, nodeModules)
-    } else {
+    const declared = manifestAt(path.join(fixtureDir, 'package.json'))
+    const required = [...overrides].filter(([name]) => name in (declared.dependencies ?? {}) || name in (declared.devDependencies ?? {}))
+    for (const [name] of required) if (!installedVersion(installed, name)) throw new Error(`${fixture.name}: override ${name} is declared but not installed`)
+    const applied = required
+    if (applied.length && fixture.layout === 'pnpm-isolated') throw new Error(`${fixture.name}: unsupported override binding in pnpm-isolated layout`)
+    if (fixture.nodeModules === 'copy') copyTree(installed, nodeModules)
+    else {
         mkdirSync(nodeModules)
         for (const entry of readdirSync(installed, { withFileTypes: true })) {
             const source = path.join(installed, entry.name)
             if (entry.name.startsWith('@') && entry.isDirectory()) {
                 mkdirSync(path.join(nodeModules, entry.name))
-                for (const child of readdirSync(source)) {
-                    link(path.join(source, child), path.join(nodeModules, entry.name, child))
-                }
-            } else {
-                link(source, path.join(nodeModules, entry.name))
-            }
+                for (const child of readdirSync(source)) symlinkSync(path.join(source, child), path.join(nodeModules, entry.name, child), 'dir')
+            } else symlinkSync(source, path.join(nodeModules, entry.name), 'dir')
         }
     }
-
-    const pluginPath = fixture.plugin ? path.join(nodeModules, fixture.plugin) : null
-    let source = 'latest'
-    if (selection === 'floor' && pluginPath) {
-        rmSync(pluginPath, { recursive: true, force: true })
-        // Inside the copied tree when there is one, so Turbopack still sees it under the root.
-        link(path.join(fixture.nodeModules === 'copy' ? nodeModules : installed, fixture.floorAlias), pluginPath)
-        source = 'floor'
-    } else if (selection === 'subject') {
-        const overlaid = []
-        for (const [name, { tarball, manifest }] of subject) {
-            if (!installedVersion(installed, name)) continue // not part of this fixture
-            for (const [dependency, declared] of Object.entries(manifest.dependencies ?? {})) {
-                if (UNCHECKED.has(dependency) || subject.has(dependency)) continue
-                // An alias (`name: npm:other@range`) is installed under `name` at `other`'s version.
-                const range = declared.startsWith('npm:') ? declared.slice(declared.lastIndexOf('@') + 1) : declared
-                const version = installedVersion(installed, dependency)
-                if (!version || !satisfies(version, range)) {
-                    throw new Error(
-                        `${name} needs ${dependency}@${range}, but ${fixture.name} has ${version ?? 'nothing'}: pin it in fixtures/${fixture.name}/package.json`
-                    )
-                }
-            }
-            const destination = path.join(nodeModules, name)
-            rmSync(destination, { recursive: true, force: true })
-            mkdirSync(destination, { recursive: true })
-            execFileSync('tar', ['-xzf', tarball, '--strip-components=1', '-C', destination])
-            overlaid.push(`${name}@${manifest.version}`)
+    if (fixture.plugin && !overrides.has(fixture.plugin)) {
+        const plugin = manifestAt(path.join(installed, fixture.plugin, 'package.json'))
+        for (const [name, { manifest }] of applied) {
+            const range = plugin.dependencies?.[name] ?? plugin.peerDependencies?.[name]
+            if (range && !satisfies(manifest.version, range)) throw new Error(`${fixture.plugin} needs ${name}@${range}, but ${fixture.name} overrides it with ${manifest.version}`)
         }
-        if (fixture.plugin && !overlaid.some((item) => item.startsWith(`${fixture.plugin}@`))) {
-            throw new Error(`subject has no tarball for ${fixture.plugin}`)
-        }
-        source = `subject (${overlaid.join(', ')})`
     }
-
-    if (!pluginPath) return { name: 'posthog-cli', version: 'cli', source }
-    const manifest = JSON.parse(readFileSync(path.join(pluginPath, 'package.json'), 'utf8'))
-    return { name: manifest.name, version: manifest.version, source }
+    for (const [name, { tarball, manifest }] of applied) {
+        for (const [dependency, declared] of Object.entries(manifest.dependencies ?? {})) {
+            if (UNCHECKED.has(dependency)) continue
+            const range = declared.startsWith('npm:') ? declared.slice(declared.lastIndexOf('@') + 1) : declared
+            const version = overrides.get(dependency)?.manifest.version ?? installedVersion(installed, dependency)
+            if (!version || !satisfies(version, range)) throw new Error(`${name} needs ${dependency}@${range}, but ${fixture.name} has ${version ?? 'nothing'}`)
+        }
+        const destination = path.join(nodeModules, name)
+        rmSync(destination, { recursive: true, force: true })
+        mkdirSync(destination, { recursive: true })
+        execFileSync('tar', ['-xzf', tarball, '--strip-components=1', '-C', destination])
+    }
+    const packages = Object.fromEntries(applied.map(([name, entry]) => [name, { version: entry.manifest.version, path: entry.tarball }]))
+    const framework = ['next', 'nuxt', 'vite', 'webpack', 'rollup'].find((name) => installedVersion(nodeModules, name))
+    const frameworkInfo = framework && { name: framework, version: installedVersion(nodeModules, framework), path: packages[framework]?.path ?? null }
+    if (!fixture.plugin) return { name: 'posthog-cli', version: 'cli', source: 'pinned', packages, framework: frameworkInfo }
+    const plugin = manifestAt(path.join(nodeModules, fixture.plugin, 'package.json'))
+    return { name: plugin.name, version: plugin.version, source: packages[fixture.plugin]?.path ?? 'pinned', packages, framework: frameworkInfo }
 }

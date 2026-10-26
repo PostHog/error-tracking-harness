@@ -4,17 +4,6 @@ import path from 'node:path'
 import { compare } from './semver.mjs'
 import { validateCase, validateFixture } from './validate.mjs'
 
-/** The @posthog/cli package a fixture installed, which the plugins resolve when no path is given. */
-export function fixtureCli(fixture) {
-    for (const candidate of ['node_modules/@posthog/cli/package.json', 'node_modules/.pnpm/node_modules/@posthog/cli/package.json']) {
-        const file = path.join(fixture.dir, candidate)
-        if (existsSync(file)) return { label: 'fixture', version: JSON.parse(readFileSync(file, 'utf8')).version, path: null }
-    }
-    const nested = readdirSync(path.join(fixture.dir, 'node_modules/.pnpm'), { withFileTypes: true }).find((entry) => entry.name.startsWith('@posthog+cli@'))
-    if (nested) return { label: 'fixture', version: nested.name.split('@').pop(), path: null }
-    return { label: 'fixture', version: 'unknown', path: null }
-}
-
 export const compareVersions = compare
 
 export function cliAtLeast(cli, floor) {
@@ -22,14 +11,24 @@ export function cliAtLeast(cli, floor) {
     return !floor || cli.version === 'custom' || (cli.version !== 'unknown' && compareVersions(cli.version, floor) >= 0)
 }
 
-/** Fixtures a tarball overlay cannot reach (pnpm-isolated layouts) are skipped under --plugins subject. */
-export function overlayable(fixture) {
-    return fixture.subject !== false
-}
-
-export function loadFixtures(root, filter) {
+export function loadFixtures(root, filter, tags) {
+    const names = readdirSync(root).sort()
+    if (filter) for (const name of filter) {
+        if (!names.includes(name) || !existsSync(path.join(root, name, 'fixture.json'))) throw new Error(`Unknown fixture ${name}`)
+    }
+    if (tags) {
+        const known = new Set()
+        for (const name of names) {
+            const file = path.join(root, name, 'fixture.json')
+            if (!existsSync(file)) continue
+            const config = JSON.parse(readFileSync(file, 'utf8'))
+            const defaults = config.extends ? JSON.parse(readFileSync(path.join(root, '_defaults', `${config.extends}.json`), 'utf8')) : {}
+            for (const tag of config.tags ?? defaults.tags ?? []) known.add(tag)
+        }
+        for (const tag of tags) if (!known.has(tag)) throw new Error(`Unknown fixture tag ${tag}`)
+    }
     const fixtures = []
-    for (const name of readdirSync(root).sort()) {
+    for (const name of names) {
         const file = path.join(root, name, 'fixture.json')
         if (!existsSync(file)) continue
         if (filter && !filter.includes(name)) continue
@@ -38,11 +37,9 @@ export function loadFixtures(root, filter) {
         const { extends: _extends, ...fields } = config
         const fixture = { ...defaults, ...fields }
         validateFixture(fixture, name)
-        fixtures.push({ ...fixture, name, dir: path.join(root, name) })
+        if (!tags || tags.some((tag) => fixture.tags.includes(tag))) fixtures.push({ ...fixture, name, dir: path.join(root, name) })
     }
-    if (filter) {
-        for (const name of filter) if (!fixtures.some((fixture) => fixture.name === name)) throw new Error(`Unknown fixture ${name}`)
-    }
+    if (!fixtures.length) throw new Error(`No fixture matches names ${filter?.join(',') ?? '*'} and tags ${tags?.join(',') ?? '*'}`)
     return fixtures
 }
 
@@ -68,11 +65,6 @@ export function loadCases(root, patterns) {
     return cases
 }
 
-export function pluginAtLeast(plugin, floors) {
-    const floor = floors?.[plugin.name]
-    return !floor || plugin.version === 'cli' || compareVersions(plugin.version, floor) >= 0
-}
-
 /** `plugins` maps a fixture name to the plugin that selection puts in place. */
 // Slow fixtures (framework builds) run against the oldest and newest CLI only.
 function clisFor(fixture, clis) {
@@ -85,7 +77,7 @@ function clisFor(fixture, clis) {
     return [...new Set([versioned[0], versioned.at(-1), ...custom].filter(Boolean))]
 }
 
-export function planMatrix({ clis, fixtures, cases, plugins, metadataOnly = false }) {
+export function planMatrix({ clis, fixtures, cases, plugins }) {
     const entries = []
     for (const cli of clis) {
         for (const fixture of fixtures) {
@@ -95,21 +87,9 @@ export function planMatrix({ clis, fixtures, cases, plugins, metadataOnly = fals
                 // A case is written for one kind of fixture: `plugin` (the bundler plugin injects and
                 // uploads) or `cli` (the harness runs posthog-cli on the built files).
                 if ((kase.mode ?? 'plugin') !== (fixture.mode ?? 'plugin')) continue
-                // A case with `cliBinary: fixture` leaves cliBinaryPath unset, so the plugin resolves
-                // the CLI the fixture installed. The matrix's CLI dimension does not apply: one cell.
-                if (kase.cliBinary === 'fixture') {
-                    if (cli !== clis[0]) continue
-                    const own = metadataOnly ? { label: 'fixture', version: 'unknown', path: null } : fixtureCli(fixture)
-                    const skipped = metadataOnly || cliAtLeast(own, kase.minCli) ? undefined : `fixture ships posthog-cli ${own.version}, needs >= ${kase.minCli}`
-                    entries.push({ cli: own, fixture, kase, plugin, skipped })
-                    continue
-                }
                 let skipped
                 if (!cliAtLeast(cli, kase.minCli)) skipped = `needs posthog-cli >= ${kase.minCli}`
                 else if (fixture.minCli && !cliAtLeast(cli, fixture.minCli)) skipped = `fixture needs posthog-cli >= ${fixture.minCli}`
-                else if (!pluginAtLeast(plugin, kase.minPlugin)) skipped = `needs ${plugin.name} >= ${kase.minPlugin[plugin.name]}`
-                // A fixture can need a plugin version for every case (a published plugin mishandles it).
-                else if (fixture.minPlugin && !pluginAtLeast(plugin, { [plugin.name]: fixture.minPlugin })) skipped = `fixture needs ${plugin.name} >= ${fixture.minPlugin}`
                 entries.push({ cli, fixture, kase, plugin, skipped })
             }
         }

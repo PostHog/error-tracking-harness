@@ -1,9 +1,9 @@
 {
     "mode": "nuxt",
     "bundler": "nitro",
+    "tags": ["nuxt","framework"],
     "version": "4.6.1",
     "plugin": "@posthog/nuxt",
-    "floorAlias": "posthog-nuxt-floor",
     "minCli": "0.18.0",
     "dist": ".output",
     "distGlobs": [

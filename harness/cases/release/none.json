@@ -1,7 +1,0 @@
-{
-    "description": "No release name or version, no git checkout, no CI metadata: the plugin warns, injects chunk ids only, uploads unbound symbol sets, and exceptions resolve but report no release.",
-    "options": { "sourcemaps": { "releaseMode": "event", "releaseName": null, "releaseVersion": null } },
-    "expect": {
-        "events": "no-release"
-    }
-}

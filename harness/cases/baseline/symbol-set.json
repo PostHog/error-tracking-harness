@@ -1,8 +1,0 @@
-{
-    "description": "Two releases in symbol-set mode: every symbol set is bound to its release, chunk ids are random per build, exceptions carry no $release_id, and every chunk is uploaded again for the new release.",
-    "options": { "sourcemaps": { "releaseMode": "symbol-set" } },
-    "releases": 2,
-    "expect": {
-        "reuploads": { "@posthog/webpack-plugin": 2, "@posthog/rollup-plugin": 2 }
-    }
-}

@@ -1,8 +1,8 @@
 {
     "bundler": "vite",
+    "tags": ["vite","browser","sri"],
     "version": "8.3.4",
     "plugin": "@posthog/rollup-plugin",
-    "floorAlias": "posthog-rollup-plugin-floor",
     "dist": "dist",
     "distGlobs": [
         "**/*.js",

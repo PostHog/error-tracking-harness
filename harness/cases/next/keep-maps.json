@@ -1,21 +1,6 @@
 {
     "mode": "next",
-    "description": "deleteAfterUpload: false keeps every map and its comment, client and server. On the Turbopack path the release reaches the bundled posthog-js through env, but not an externalized posthog-node: no runtime module sets _posthogReleaseId there, so server exceptions resolve but carry no release while browser exceptions carry it.",
-    "options": {
-        "sourcemaps": {
-            "releaseMode": "event",
-            "deleteAfterUpload": false
-        }
-    },
-    "expect": {
-        "maps": "kept-visible",
-        "eventsBy": {
-            "entry": {
-                "@posthog/nextjs-config:turbopack": "no-release"
-            },
-            "lazy": {
-                "@posthog/nextjs-config:turbopack": "no-release"
-            }
-        }
-    }
+    "description": "Keeping maps must leave comments and maps visible without compromising server or browser error diagnosis.",
+    "options": { "sourcemaps": { "releaseMode": "event", "deleteAfterUpload": false } },
+    "expect": { "maps": "kept-visible" }
 }

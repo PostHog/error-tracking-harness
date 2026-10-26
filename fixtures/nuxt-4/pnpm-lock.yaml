@@ -21,9 +21,6 @@ importers:
       '@posthog/nuxt':
         specifier: 1.7.91
         version: 1.7.91(@nuxt/schema@4.6.1)(confbox@0.3.1)(dotenv@17.4.2)(giget@3.3.1)(jiti@2.7.0)(magic-string@1.4.3)(mlly@1.8.2)(rolldown@1.2.14)(unplugin@3.4.0(esbuild@0.28.2)(rolldown@1.2.14)(rollup@4.64.7)(vite@8.3.4(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)))
-      posthog-nuxt-floor:
-        specifier: npm:@posthog/nuxt@1.7.87
-        version: '@posthog/nuxt@1.7.87(@nuxt/schema@4.6.1)(confbox@0.3.1)(dotenv@17.4.2)(giget@3.3.1)(jiti@2.7.0)(magic-string@1.4.3)(mlly@1.8.2)(rolldown@1.2.14)(unplugin@3.4.0(esbuild@0.28.2)(rolldown@1.2.14)(rollup@4.64.7)(vite@8.3.4(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)))'
 
 packages:
 
@@ -562,10 +559,6 @@ packages:
 
   '@posthog/core@1.59.1':
     resolution: {integrity: sha512-P39YgzQVDh6oz6wAzQXEnoHgTYpM7gifonmVKq1scAJco79h31XmmNVurRq9tTmmyIrr1uX8FHT0riCsyfV9AQ==}
-
-  '@posthog/nuxt@1.7.87':
-    resolution: {integrity: sha512-6jsBewdyMtXDPq5kHuo0DC2y3XSa4F3IB9rpkbqlFfioigAP6a+KEU98M/puHTbXDXipvEqg4MpUxehBRPh1MA==}
-    engines: {node: ^20.20.0 || >=22.22.0}
 
   '@posthog/nuxt@1.7.91':
     resolution: {integrity: sha512-rmLavZPmrrzCLpQqeEwVtXykYbm1mMznKPTnO6x7FzE3uvQE47IgRolEJmkI3CRLuDf7lPcAagNTTLP1F6iGPA==}
@@ -4003,31 +3996,6 @@ snapshots:
   '@posthog/core@1.59.1':
     dependencies:
       '@posthog/types': 1.416.0
-
-  '@posthog/nuxt@1.7.87(@nuxt/schema@4.6.1)(confbox@0.3.1)(dotenv@17.4.2)(giget@3.3.1)(jiti@2.7.0)(magic-string@1.4.3)(mlly@1.8.2)(rolldown@1.2.14)(unplugin@3.4.0(esbuild@0.28.2)(rolldown@1.2.14)(rollup@4.64.7)(vite@8.3.4(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)))':
-    dependencies:
-      '@nuxt/kit': 4.6.1(@nuxt/schema@4.6.1)(confbox@0.3.1)(dotenv@17.4.2)(giget@3.3.1)(jiti@2.7.0)(magic-string@1.4.3)(mlly@1.8.2)(rolldown@1.2.14)(unplugin@3.4.0(esbuild@0.28.2)(rolldown@1.2.14)(rollup@4.64.7)(vite@8.3.4(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)))
-      '@posthog/cli': 0.16.2
-      '@posthog/core': 1.59.1
-      '@posthog/plugin-utils': 2.0.1
-      posthog-js: 1.438.12
-      posthog-node: 5.56.1
-    transitivePeerDependencies:
-      - '@nuxt/schema'
-      - '@opentelemetry/api'
-      - '@types/react'
-      - confbox
-      - dotenv
-      - giget
-      - jiti
-      - magic-string
-      - mlly
-      - oxc-parser
-      - preact-render-to-string
-      - react
-      - rolldown
-      - rxjs
-      - unplugin
 
   '@posthog/nuxt@1.7.91(@nuxt/schema@4.6.1)(confbox@0.3.1)(dotenv@17.4.2)(giget@3.3.1)(jiti@2.7.0)(magic-string@1.4.3)(mlly@1.8.2)(rolldown@1.2.14)(unplugin@3.4.0(esbuild@0.28.2)(rolldown@1.2.14)(rollup@4.64.7)(vite@8.3.4(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)))':
     dependencies:

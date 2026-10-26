@@ -1,27 +1,6 @@
 {
     "mode": "next",
-    "description": "Two production builds as successive releases in event mode. The webpack path injects chunk ids and the release into every client and server chunk before hashing; the Turbopack path uses native debug ids and uploads from runAfterProductionCompile. A Pages API route captures two exceptions server-side through an externalized posthog-node; both must resolve to their source lines and carry the release. On the Turbopack path the release reaches the bundled posthog-js through env, but not an externalized posthog-node: no runtime module sets _posthogReleaseId there, so server exceptions resolve but carry no release while browser exceptions carry it. Before @posthog/nextjs-config 1.11.4 the release id was injected into every chunk after hashing, so the webpack runtime kept its URL while its chunk map changed (posthog-js#5332): a browser served the previous release's runtime reported the previous release, and every other chunk was renamed each deploy.",
-    "options": {
-        "sourcemaps": {
-            "releaseMode": "event"
-        }
-    },
-    "releases": 2,
-    "minPlugin": {
-        "@posthog/nextjs-config": "1.11.4"
-    },
-    "expect": {
-        "maps": {
-            "@posthog/nextjs-config": "deleted",
-            "@posthog/nextjs-config:turbopack": "dangling"
-        },
-        "eventsBy": {
-            "entry": {
-                "@posthog/nextjs-config:turbopack": "no-release"
-            },
-            "lazy": {
-                "@posthog/nextjs-config:turbopack": "no-release"
-            }
-        }
-    }
+    "description": "Two successive Next.js releases: server and browser exceptions must resolve and carry the correct release, even with older immutable assets replayed. Source maps must be cleaned up on both bundlers.",
+    "options": { "sourcemaps": { "releaseMode": "event" } },
+    "releases": 2
 }

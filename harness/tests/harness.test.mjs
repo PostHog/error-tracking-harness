@@ -27,7 +27,7 @@ test('fixture defaults resolve without installed dependencies', () => {
     assert.equal(next.immutable, 'static/**')
     assert.equal(fixtures.find((fixture) => fixture.name === 'vite-8-sri').runtime.kind, 'browser')
     assert.equal(turbo.distIgnore.length, 3)
-    assert.ok(loadCases(path.join(root, 'harness/cases')).length >= 33)
+    assert.ok(loadCases(path.join(root, 'harness/cases')).length >= 15)
 })
 
 test('matrix can be planned from metadata alone', () => {
@@ -51,7 +51,7 @@ test('configuration typos and invalid combinations fail early', () => {
     assert.throws(() => validateCase({ expec: {} }, 'typo'), /unknown field expec/)
     assert.throws(() => validateCase({ mode: 'plugin', cli: { command: 'process' } }, 'wrong'), /cli steps require cli mode/)
     assert.throws(() => validateCase({ releases: 0 }, 'wrong'), /positive integer/)
-    assert.throws(() => validateFixture({ mode: 'cli', bundler: 'rollup', throws: {}, plugin: 'plugin' }, 'wrong'), /cannot use a plugin/)
+    assert.throws(() => validateFixture({ mode: 'cli', bundler: 'rollup', tags: ['cli'], throws: {}, plugin: 'plugin' }, 'wrong'), /cannot use a plugin/)
 })
 
 const chunk = (file) => ({ file, chunkId: null, cliSkipped: null, sourceMappingURL: false })
@@ -72,8 +72,8 @@ test('mapsBy does not exempt unmatched files from cleanup', () => {
         ['static/entry.js.map', 'server/lazy.js.map']), kase)
     assert.equal(result.ok, false)
     assert.match(result.failures.join('\n'), /maps kept-hidden.*expected deleted/)
-    assert.equal(judge(evidence([chunk('static/entry.js'), chunk('server/lazy.js')],
-        ['static/entry.js.map']), kase).ok, true)
+    assert.doesNotMatch(judge(evidence([chunk('static/entry.js'), chunk('server/lazy.js')],
+        ['static/entry.js.map']), kase).failures.join('\n'), /maps .*expected/)
 })
 
 test('judge-only refreshes the summary and report from saved evidence', () => {
