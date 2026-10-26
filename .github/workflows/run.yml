@@ -35,6 +35,62 @@ jobs:
                   path: /tmp/image.tar
                   retention-days: 1
 
+    prepared:
+        name: Prepared image end-to-end
+        needs: image
+        runs-on: ubuntu-latest
+        timeout-minutes: 25
+        steps:
+            - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+              with:
+                  name: image
+                  path: /tmp
+            - name: Build subject image and run a cell without network
+              run: |
+                  set -euo pipefail
+                  docker load --input /tmp/image.tar
+                  context=$(mktemp -d)
+                  npm pack @posthog/rollup-plugin@1.6.1 --pack-destination "$context" --ignore-scripts --silent
+                  npm pack @posthog/core@1.59.1 --pack-destination "$context" --ignore-scripts --silent
+                  node - "$context" <<'NODE'
+                  const { execFileSync } = require('node:child_process')
+                  const { readdirSync, writeFileSync } = require('node:fs')
+                  const path = require('node:path')
+                  const dir = process.argv[2]
+                  const packages = {}
+                  for (const file of readdirSync(dir).filter((name) => name.endsWith('.tgz'))) {
+                      const manifest = JSON.parse(execFileSync('tar', ['-xzOf', path.join(dir, file), 'package/package.json'], { encoding: 'utf8' }))
+                      packages[manifest.name] = `/subject/${file}`
+                  }
+                  if (Object.keys(packages).sort().join() !== '@posthog/core,@posthog/rollup-plugin') throw new Error('Missing smoke tarballs')
+                  writeFileSync(path.join(dir, 'overrides.json'), JSON.stringify({ packages }))
+                  NODE
+                  cat > "$context/Dockerfile" <<'DOCKER'
+                  ARG HARNESS_IMAGE
+                  FROM ${HARNESS_IMAGE}
+                  ARG FIXTURES
+                  COPY . /subject/
+                  RUN node /rig/harness/prepare-subject.mjs /subject/overrides.json "$FIXTURES"
+                  DOCKER
+                  docker buildx build --builder default --load -f "$context/Dockerfile" \
+                    --build-arg HARNESS_IMAGE=error-tracking-harness:pr --build-arg FIXTURES=rollup-4 \
+                    -t error-tracking-harness:prepared "$context"
+                  mkdir -p test-results
+                  docker run --rm --network none -v "$PWD/test-results:/artifacts" \
+                    error-tracking-harness:prepared --artifacts /artifacts --fixtures rollup-4 \
+                    --cli 0.18.12 --cases baseline/event
+                  node - <<'NODE'
+                  const summary = require('./test-results/summary.json')
+                  const packages = summary.results[0]?.packages ?? {}
+                  if (summary.executed !== 1 || summary.passed !== 1 ||
+                      !packages['@posthog/core']?.sha256 || !packages['@posthog/rollup-plugin']?.sha256) {
+                      throw new Error('Prepared cell did not run with verified tarballs')
+                  }
+                  NODE
+            - name: Report
+              if: always()
+              run: if [ -f test-results/report.md ]; then cat test-results/report.md >> "$GITHUB_STEP_SUMMARY"; fi
+
     run:
         needs: image
         runs-on: ubuntu-latest
