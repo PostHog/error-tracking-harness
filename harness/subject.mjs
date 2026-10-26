@@ -7,6 +7,10 @@ import { satisfies } from './semver.mjs'
 
 // @posthog/cli is an npm shim and must be checked independently of the selected CLI binary.
 const manifestAt = (file) => JSON.parse(readFileSync(file, 'utf8'))
+const preparedFile = process.env.HARNESS_PREPARED_SUBJECT ?? path.join(import.meta.dirname, '..', 'prepared-subject.json')
+if (process.env.HARNESS_PREPARED_SUBJECT && !existsSync(preparedFile)) throw new Error(`Missing prepared subject ${preparedFile}`)
+const prepared = existsSync(preparedFile) ? manifestAt(preparedFile) : { fixtures: {} }
+export const preparedFixtures = prepared.fixtures
 export function installedVersion(nodeModules, name) {
     const file = path.join(nodeModules, name, 'package.json')
     return existsSync(file) ? manifestAt(file).version : undefined
@@ -49,7 +53,7 @@ export function selectedPlugin(fixture, overrides = new Map(), { metadataOnly = 
         : { name: 'command', version: 'none' }
     const override = overrides.get(fixture.plugin)
     const version = override?.manifest.version ?? (metadataOnly
-        ? (manifestAt(path.join(fixture.dir, 'package.json')).devDependencies ?? {})[fixture.plugin]?.replace(/^[^\d]*/, '')
+        ? (preparedFixtures[fixture.name]?.packages?.[fixture.plugin]?.version ?? (manifestAt(path.join(fixture.dir, 'package.json')).devDependencies ?? {})[fixture.plugin]?.replace(/^[^\d]*/, ''))
         : installedVersion(path.join(fixture.dir, 'node_modules'), fixture.plugin))
     if (!version) throw new Error(`${fixture.name}: ${fixture.plugin} is not ${metadataOnly ? 'declared' : 'installed'}`)
     return { name: fixture.plugin, version }
@@ -79,7 +83,7 @@ export function bindsPackage(fixture, name, overrides = new Map()) {
         name in (entry.manifest.dependencies ?? {}))
 }
 
-function boundPackage(nodeModules, name, from) {
+export function boundPackage(nodeModules, name, from) {
     let directory = realpathSync(from)
     while (true) {
         const candidate = path.join(directory, 'node_modules', name)
@@ -92,7 +96,7 @@ function boundPackage(nodeModules, name, from) {
 
 // Check the actual bytes, not just the declared version: a tarball can have the same version as
 // the image's pinned package. Checking every packed file also detects an unchanged baked install.
-function verifyTarball(name, entry, destination, fixture) {
+export function verifyTarball(name, entry, destination, fixture) {
     if (!destination) throw new Error(`${fixture.name}: override ${name} was not bound in node_modules`)
     const installed = manifestAt(path.join(destination, 'package.json'))
     if (installed.name !== name || installed.version !== entry.manifest.version) throw new Error(`${fixture.name}: override ${name} resolved to ${installed.name}@${installed.version} at ${destination}, expected ${entry.manifest.version}`)
@@ -102,7 +106,7 @@ function verifyTarball(name, entry, destination, fixture) {
         const relative = file.slice('package/'.length)
         if (!relative || relative.split('/').includes('..')) throw new Error(`${name}: invalid tarball member ${file}`)
         const unpacked = path.join(destination, relative)
-        const packed = execFileSync('tar', ['-xzOf', entry.tarball, file])
+        const packed = execFileSync('tar', ['-xzOf', entry.tarball, file], { maxBuffer: 64 * 1024 * 1024 })
         if (!existsSync(unpacked) || !readFileSync(unpacked).equals(packed)) throw new Error(`${fixture.name}: override ${name} was not installed from ${entry.tarball} at ${destination} (${relative} differs)`)
     }
     return { version: installed.version, path: entry.tarball, installedPath: realpathSync(destination) }
@@ -117,7 +121,10 @@ export function prepareNodeModules({ fixtureDir, fixture, work, overrides = new 
     const transitive = applied.some(([name]) => !(name in (declared.dependencies ?? {}) || name in (declared.devDependencies ?? {})))
     for (const [name] of applied) if (!transitive && !installedVersion(installed, name)) throw new Error(`${fixture.name}: override ${name} is declared but not installed`)
     if (applied.length && fixture.layout === 'pnpm-isolated') throw new Error(`${fixture.name}: unsupported override binding in pnpm-isolated layout`)
-    if (fixture.nodeModules === 'copy' || applied.length) copyTree(installed, nodeModules)
+    // A prepared image may contain PR-built code. Never expose its shared installation
+    // to builds through symlinks: each cell must have its own writable copy.
+    const preparedPackages = preparedFixtures[fixture.name]?.packages ?? {}
+    if (fixture.nodeModules === 'copy' || applied.length || Object.keys(preparedPackages).length) copyTree(installed, nodeModules)
     else {
         mkdirSync(nodeModules)
         for (const entry of readdirSync(installed, { withFileTypes: true })) {
@@ -183,6 +190,13 @@ export function prepareNodeModules({ fixtureDir, fixture, work, overrides = new 
             if (!packages[name]) continue
             verifyTarball(name, overrides.get(name), boundPackage(nodeModules, name, path.join(nodeModules, parent)), fixture)
         }
+    }
+    for (const [name, entry] of Object.entries(preparedPackages)) {
+        const destination = boundPackage(nodeModules, name, fixture.plugin ? path.join(nodeModules, fixture.plugin) : work)
+        if (!destination || manifestAt(path.join(destination, 'package.json')).version !== entry.version) {
+            throw new Error(`${fixture.name}: prepared ${name}@${entry.version} is not installed in this cell`)
+        }
+        packages[name] = { ...entry, installedPath: realpathSync(destination) }
     }
     const framework = ['next', 'nuxt', 'vite', 'webpack', 'rollup'].find((name) => installedVersion(nodeModules, name))
     const frameworkInfo = framework && { name: framework, version: installedVersion(nodeModules, framework), path: packages[framework]?.path ?? null, installedPath: realpathSync(path.join(nodeModules, framework)) }

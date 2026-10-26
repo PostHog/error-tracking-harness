@@ -30,64 +30,43 @@ failed, skipped, uncovered and selected fixtures/tags. Per-cell evidence, verdic
 logs and built files live under `<artifacts>/<cli>/<fixture>/<case>/` (by default a new
 `test-results/run-*` directory).
 
-## Local overrides (posthog-js and framework CI)
+## Prepared subject images (posthog-js CI)
 
-Build npm tarballs before starting the offline harness. An override manifest identifies **exactly**
-which packages to replace and optionally a CLI binary. Paths are relative to the manifest:
-
-```json
-{
-  "packages": {
-    "@posthog/nextjs-config": "./nextjs-config.tgz",
-    "next": "./next.tgz"
-  },
-  "binaries": { "posthog-cli": "./posthog-cli" }
-}
-```
-
-Mount the manifest and artifacts into the image:
+The base image contains all pinned fixture dependencies. To test PR-built npm tarballs without
+releasing a new base image, build a temporary derivative containing only the selected tarballs:
 
 ```sh
-# posthog-js CI: first produce the package tarball(s) with pnpm package, then stage the manifest.
-docker run --rm --network none \
-  -v "$PWD/target:/subject:ro" -v "$PWD/test-results:/artifacts" \
-  ghcr.io/posthog/error-tracking-harness@sha256:<pinned-digest> \
-  --overrides /subject/overrides.json --tags next
-# The workflow must treat this process's exit status as a required check.
+# From posthog-js after packing its selected workspace dependencies.
+# The Docker context contains only tarballs and overrides.json (no checkout or credentials).
+docker build -f tooling/error-tracking-harness/Dockerfile.subject \
+  --build-arg HARNESS_IMAGE=ghcr.io/posthog/error-tracking-harness@sha256:<pinned-digest> \
+  --build-arg FIXTURES=rollup-4 -t error-tracking-harness:subject /path/to/subject-context
+docker run --rm --network none -v "$PWD/test-results:/artifacts" \
+  error-tracking-harness:subject --artifacts /artifacts --fixtures rollup-4 --cli 0.18.12 --cases baseline/event
 ```
 
-A framework-only, plugin-only, combined or CLI-only override works. Unmentioned packages retain
-fixture pins. For posthog-js PRs that pack `@posthog/core` alongside a plugin, include the already-
-packed core tarball in the same manifest, for example:
+At image build time, `/rig/harness/prepare-subject.mjs /subject/overrides.json rollup-4`
+rewrites **only selected fixtures'** direct and transitive dependencies to mounted `file:`
+tarballs via pnpm overrides, then installs them once with network access and scripts disabled.
+The builder verifies the actual bytes and versions resolved by the consuming plugins, rejects
+unused tarballs, and writes `prepared-subject.json` with per-fixture provenance. At runtime no
+pnpm install or package override occurs; `--network none` remains safe. Each cell receives a
+writable **copy** of the verified fixture `node_modules`, so builds cannot mutate the prepared
+image or other cells. Summary, report, and per-cell evidence record the installed packages.
 
-```json
-{
-  "packages": {
-    "@posthog/nuxt": "./nuxt.tgz",
-    "@posthog/webpack-plugin": "./webpack-plugin.tgz",
-    "@posthog/core": "./core.tgz"
-  }
-}
-```
+`@posthog/cli` in the tarball manifest is its npm shim, not the CLI executable. The harness
+selects the CLI binary independently with `--cli`, `--cli-binary` or the baked versions. Pack the
+npm shim matching the PR-built plugin's dependency when building the subject image; its networked
+postinstall is intentionally skipped. The `posthog-js` runner stages only its selected closure
+and that shim in the build context.
 
-Mount all three tarballs under `/subject` with the manifest. The harness uses the fixture's
-pruned pnpm store plus those tarballs to reinstall the affected dependency graph with `pnpm
-install --offline`; it never fetches packages at run time. If the PR needs another dependency
-absent from the image's store, pack and override that package too or update the image's pinned
-lockfiles. `@posthog/cli` is an npm dependency/shim, distinct from the CLI executable selected
-with `binaries.posthog-cli` or `--cli-binary`. Only use the binary field for the executable.
-Installed paths and versions in per-cell evidence/report are verified against tarball contents;
-requested but failed overrides are not listed as applied.
+### Legacy runtime overrides
 
-Without `--fixtures` or `--tags`, package overrides select fixtures depending on at least one
-named package; a CLI-only override selects all fixtures. With filters, every named
-override must be used in the selected fixtures. Tarball identity and paths, CLI executability and
-reported version, dependency compatibility and binding support are checked: no missing override
-silently falls back to the pinned copy. An isolated pnpm layout that cannot accept an override
-fails when selected, rather than being skipped. `--cli` and `--cli-binary` conflict with a CLI
-manifest override. Evidence and reports record the applied tarballs, plugin/framework versions,
-and CLI path/version. A new consumer workflow in `posthog-js` must mount its PR-built tarball(s),
-pass `--overrides /subject/overrides.json --tags <relevant-tag>` and require the harness exit code.
+`--overrides /subject/overrides.json` remains for existing consumers while they migrate. It can
+accept named package tarballs or a `binaries.posthog-cli` executable; absent explicit fixture
+tags/names it selects fixtures using those packages. It is **not** used by posthog-js CI. A
+prepared image rejects runtime overrides to avoid mixing a verified installed graph with a
+second installation. Prefer a prepared image for new package-override consumers.
 
 ## Fixture lifecycle
 
@@ -113,7 +92,7 @@ POSIX-shell lifecycle smoke fixture can build without `package.json` or `node_mo
 
 The manifest also needs a `throws.entry` source marker for validation. This smoke example tests
 preparation/build/runtime plumbing, **not** JS symbolication. Production JS fixtures use the
-`node-modules` workspace adapter, which applies named npm overrides. A command-prepared fixture
+`node-modules` workspace adapter, which consumes the prepared fixture installation. A command-prepared fixture
 with a selected package override fails without a compatible binding. Non-JS symbol collectors and
 non-npm subject bindings are not yet implemented. Process triggers run explicit argv; HTTP
 triggers declare startup, readiness and routes; browser triggers declare a page and served file

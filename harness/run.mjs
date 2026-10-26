@@ -8,7 +8,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFil
 import { homedir } from 'node:os'
 import path from 'node:path'
 import { loadCases, loadFixtures, planMatrix } from './plan.mjs'
-import { bindsPackage, loadOverrides, selectedPlugin } from './subject.mjs'
+import { bindsPackage, loadOverrides, preparedFixtures, selectedPlugin } from './subject.mjs'
 import { coverage } from './coverage.mjs'
 import { executeCase, discardWork } from './execute.mjs'
 import { judge } from './judge.mjs'
@@ -56,6 +56,7 @@ if (args['judge-only']) {
     process.exit(saveSummary(runDir, results, { fixtures: [...new Set(results.map((result) => result.fixture))] }) ? 0 : 1)
 }
 
+if (args.overrides && Object.keys(preparedFixtures).length) throw new Error('Prepared images do not accept runtime package overrides')
 const overrides = loadOverrides(args.overrides)
 if (overrides.cli && (args.cli || args['cli-binary'])) throw new Error('CLI override conflicts with --cli or --cli-binary')
 if (args.cli && args['cli-binary']) throw new Error('--cli conflicts with --cli-binary')
@@ -96,7 +97,8 @@ for (const fixture of fixtures) {
 const plugins = new Map(fixtures.map((fixture) => [fixture.name, selectedPlugin(fixture, overrides.packages, { metadataOnly: args.list })]))
 const matrix = planMatrix({ clis, fixtures, cases, plugins })
 const selected = fixtures.map(({ name, tags }) => ({ name, tags }))
-const provenance = { packages: Object.fromEntries([...overrides.packages].map(([name, entry]) => [name, { version: entry.manifest.version, path: entry.tarball }])), cli: overrides.cli }
+const provenance = { packages: Object.fromEntries([...overrides.packages].map(([name, entry]) => [name, { version: entry.manifest.version, path: entry.tarball }])), cli: overrides.cli,
+    prepared: Object.fromEntries(fixtures.filter((fixture) => preparedFixtures[fixture.name]).map((fixture) => [fixture.name, preparedFixtures[fixture.name]])) }
 function frameworkFor(fixture) {
     const file = path.join(fixture.dir, 'package.json')
     if (!existsSync(file)) return null
