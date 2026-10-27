@@ -41,7 +41,7 @@ jobs:
         strategy:
             fail-fast: false
             matrix:
-                fixture: [webpack-5.112, rollup-4, vite-8, vite-8-isolated, cli-rollup-4, next-14, next-15, next-16-webpack, next-16-turbopack, nuxt-4, vite-8-sri, webpack-5.112-sri]
+                fixture: [rollup-4, vite-8-autocapture, webpack-5.112, next-14, next-15, nuxt-4]
         steps:
             - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
             - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
@@ -55,7 +55,8 @@ jobs:
                   docker run --rm --network none \
                     -v "$PWD/test-results:/artifacts" \
                     error-tracking-harness:pr \
-                    --artifacts /artifacts --fixtures ${{ matrix.fixture }}
+                    --artifacts /artifacts --fixtures ${{ matrix.fixture }} --cli 0.18.11 \
+                    --cases baseline/smoke,next/smoke,nuxt/smoke,autoexception/baseline
             - name: Report
               if: always()
               run: cat test-results/report.md >> "$GITHUB_STEP_SUMMARY"

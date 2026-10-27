@@ -8,7 +8,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFil
 import { homedir } from 'node:os'
 import path from 'node:path'
 import { loadCases, loadFixtures, planMatrix } from './plan.mjs'
-import { bindsPackage, loadOverrides, preparedFixtures, selectedPlugin } from './subject.mjs'
+import { bindsPackage, loadOverrides, pluginCliRange, preparedFixtures, selectedPlugin } from './subject.mjs'
 import { coverage } from './coverage.mjs'
 import { executeCase, discardWork } from './execute.mjs'
 import { judge } from './judge.mjs'
@@ -95,7 +95,12 @@ for (const fixture of fixtures) {
     if (fixture.layout === 'pnpm-isolated' && [...overrides.packages.keys()].some((name) => dependsOn(fixture, name))) throw new Error(`${fixture.name}: unsupported override binding in pnpm-isolated layout`)
 }
 const plugins = new Map(fixtures.map((fixture) => [fixture.name, selectedPlugin(fixture, overrides.packages, { metadataOnly: args.list })]))
-const matrix = planMatrix({ clis, fixtures, cases, plugins })
+const cliRanges = new Map(fixtures.map((fixture) => [fixture.name, pluginCliRange(fixture, overrides.packages, { metadataOnly: args.list })]))
+if (args.list) {
+    const unknown = fixtures.filter((fixture) => fixture.plugin && !cliRanges.get(fixture.name))
+    if (unknown.length) console.warn(`CLI compatibility unknown for ${unknown.map((fixture) => fixture.name).join(', ')}; install fixture dependencies to preview the filtered matrix`)
+}
+const matrix = planMatrix({ clis, fixtures, cases, plugins, cliRanges })
 const selected = fixtures.map(({ name, tags }) => ({ name, tags }))
 const provenance = { packages: Object.fromEntries([...overrides.packages].map(([name, entry]) => [name, { version: entry.manifest.version, path: entry.tarball }])), cli: overrides.cli,
     prepared: Object.fromEntries(fixtures.filter((fixture) => preparedFixtures[fixture.name]).map((fixture) => [fixture.name, preparedFixtures[fixture.name]])) }

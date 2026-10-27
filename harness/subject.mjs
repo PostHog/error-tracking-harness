@@ -1,7 +1,8 @@
 // Local, named package overrides replace only the requested installed dependencies. All other
 // packages stay pinned to the fixture's offline node_modules tree.
 import { execFileSync } from 'node:child_process'
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { satisfies } from './semver.mjs'
 
@@ -45,6 +46,23 @@ export function loadOverrides(file) {
     }
     if (!packages.size && !cli) throw new Error(`No overrides in ${file}`)
     return { packages, cli }
+}
+
+// For a PR-built plugin, use its declared CLI dependency to select baked binaries. Pinned
+// conformance fixtures retain their existing matrix: some deliberately exercise newer CLI
+// capabilities than their older published plugin's npm shim declares.
+export function pluginCliRange(fixture, overrides = new Map(), { metadataOnly = false } = {}) {
+    if (!fixture.plugin) return null
+    const override = overrides.get(fixture.plugin)?.manifest
+    const preparedPlugin = preparedFixtures[fixture.name]?.packages?.[fixture.plugin]
+    if (!override && !preparedPlugin) return null
+    const file = path.join(fixture.dir, 'node_modules', fixture.plugin, 'package.json')
+    const manifest = override ?? (existsSync(file) ? manifestAt(file) : null)
+    if (!manifest && metadataOnly) return null
+    if (!manifest) throw new Error(`${fixture.name}: prepared plugin ${fixture.plugin} is not installed`)
+    const range = manifest.dependencies?.['@posthog/cli']
+    if (typeof range !== 'string' || !range) throw new Error(`${fixture.name}: ${fixture.plugin} does not declare an @posthog/cli dependency`)
+    return range
 }
 
 export function selectedPlugin(fixture, overrides = new Map(), { metadataOnly = false } = {}) {
@@ -94,22 +112,66 @@ export function boundPackage(nodeModules, name, from) {
     }
 }
 
-// Check the actual bytes, not just the declared version: a tarball can have the same version as
-// the image's pinned package. Checking every packed file also detects an unchanged baked install.
-export function verifyTarball(name, entry, destination, fixture) {
-    if (!destination) throw new Error(`${fixture.name}: override ${name} was not bound in node_modules`)
-    const installed = manifestAt(path.join(destination, 'package.json'))
-    if (installed.name !== name || installed.version !== entry.manifest.version) throw new Error(`${fixture.name}: override ${name} resolved to ${installed.name}@${installed.version} at ${destination}, expected ${entry.manifest.version}`)
-    const files = execFileSync('tar', ['-tzf', entry.tarball], { encoding: 'utf8' }).trim().split('\n')
-    for (const file of files) {
-        if (!file.startsWith('package/') || file.endsWith('/')) continue
-        const relative = file.slice('package/'.length)
-        if (!relative || relative.split('/').includes('..')) throw new Error(`${name}: invalid tarball member ${file}`)
-        const unpacked = path.join(destination, relative)
-        const packed = execFileSync('tar', ['-xzOf', entry.tarball, file], { maxBuffer: 64 * 1024 * 1024 })
-        if (!existsSync(unpacked) || !readFileSync(unpacked).equals(packed)) throw new Error(`${fixture.name}: override ${name} was not installed from ${entry.tarball} at ${destination} (${relative} differs)`)
+// A version or lockfile reference cannot prove that a consuming plugin resolved the PR tarball.
+// Unpack each archive once and compare every packed file at each distinct resolved location.
+export function createTarballVerifier() {
+    const archives = new Map()
+    const checked = new Set()
+    return {
+        verify(name, entry, destination, fixture) {
+            if (!destination) throw new Error(`${fixture.name}: override ${name} was not bound in node_modules`)
+            const installed = manifestAt(path.join(destination, 'package.json'))
+            if (installed.name !== name || installed.version !== entry.manifest.version) throw new Error(`${fixture.name}: override ${name} resolved to ${installed.name}@${installed.version} at ${destination}, expected ${entry.manifest.version}`)
+            const installedPath = realpathSync(destination)
+            const key = `${entry.tarball}\0${installedPath}`
+            if (!checked.has(key)) {
+                let archive = archives.get(entry.tarball)
+                if (!archive) {
+                    const files = execFileSync('tar', ['-tzf', entry.tarball], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }).trim().split('\n')
+                    const types = execFileSync('tar', ['-tvzf', entry.tarball], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }).trim().split('\n')
+                    if (files.length !== types.length) throw new Error(`${name}: invalid tarball listing`)
+                    for (const [index, file] of files.entries()) {
+                        const relative = file.startsWith('package/') ? file.slice('package/'.length).replace(/\/$/, '') : ''
+                        if ((!relative && file !== 'package/') || (relative && relative.split('/').some((part) => part === '.' || part === '..' || !part))) {
+                            throw new Error(`${name}: invalid tarball member ${file}`)
+                        }
+                        // Do not extract links or special files; a link could escape the temporary directory.
+                        if (!'d-'.includes(types[index][0])) throw new Error(`${name}: unsupported tarball member ${file}`)
+                    }
+                    const directory = mkdtempSync(path.join(tmpdir(), 'harness-tarball-'))
+                    try {
+                        execFileSync('tar', ['-xzf', entry.tarball, '-C', directory], { stdio: 'pipe' })
+                    } catch (error) {
+                        rmSync(directory, { recursive: true, force: true })
+                        throw error
+                    }
+                    archive = { directory, files }
+                    archives.set(entry.tarball, archive)
+                }
+                for (const file of archive.files) {
+                    if (file.endsWith('/')) continue
+                    const relative = file.slice('package/'.length)
+                    const unpacked = path.join(destination, relative)
+                    const packed = path.join(archive.directory, file)
+                    if (!existsSync(unpacked) || !existsSync(packed) || !readFileSync(unpacked).equals(readFileSync(packed))) {
+                        throw new Error(`${fixture.name}: override ${name} was not installed from ${entry.tarball} at ${destination} (${relative} differs)`)
+                    }
+                }
+                checked.add(key)
+            }
+            return { version: installed.version, path: entry.tarball, installedPath }
+        },
+        close() {
+            for (const { directory } of archives.values()) rmSync(directory, { recursive: true, force: true })
+            archives.clear()
+            checked.clear()
+        },
     }
-    return { version: installed.version, path: entry.tarball, installedPath: realpathSync(destination) }
+}
+
+export function verifyTarball(name, entry, destination, fixture) {
+    const verifier = createTarballVerifier()
+    try { return verifier.verify(name, entry, destination, fixture) } finally { verifier.close() }
 }
 
 export function prepareNodeModules({ fixtureDir, fixture, work, overrides = new Map() }) {

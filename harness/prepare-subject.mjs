@@ -6,7 +6,7 @@ import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { loadFixtures } from './plan.mjs'
-import { bindsPackage, boundPackage, loadOverrides, verifyTarball } from './subject.mjs'
+import { bindsPackage, boundPackage, createTarballVerifier, loadOverrides } from './subject.mjs'
 
 export function prepareSubject({ root, manifestFile, names, install = true }) {
     if (!names?.length) throw new Error('At least one fixture is required for a prepared image')
@@ -14,6 +14,11 @@ export function prepareSubject({ root, manifestFile, names, install = true }) {
     if (cli) throw new Error('CLI executables are selected at runtime, not installed in fixtures')
     const fixtures = loadFixtures(path.join(root, 'fixtures'), names)
     if (fixtures.length !== names.length) throw new Error(`Unknown or duplicate fixture in ${names.join(', ')}`)
+    const verifier = createTarballVerifier()
+    try { return prepareFixtures({ root, fixtures, packages, verifier, install }) } finally { verifier.close() }
+}
+
+function prepareFixtures({ root, fixtures, packages, verifier, install }) {
     const used = new Set()
     const prepared = { fixtures: {} }
     for (const fixture of fixtures) {
@@ -49,13 +54,13 @@ export function prepareSubject({ root, manifestFile, names, install = true }) {
             const parent = [...applicable].find(([other, item]) => other !== name && name in (item.manifest.dependencies ?? {}))?.[0]
             const destination = boundPackage(nodeModules, name, parent ? path.join(nodeModules, parent) : pluginDir)
                 ?? boundPackage(nodeModules, name, fixture.dir)
-            const verified = verifyTarball(name, entry, destination, fixture)
+            const verified = verifier.verify(name, entry, destination, fixture)
             subjectPackages[name] = { ...verified, sha256: createHash('sha256').update(readFileSync(entry.tarball)).digest('hex') }
         }
         for (const [parent, entry] of applicable) {
             for (const name of Object.keys(entry.manifest.dependencies ?? {})) {
                 if (!subjectPackages[name]) continue
-                verifyTarball(name, packages.get(name), boundPackage(nodeModules, name, path.join(nodeModules, parent)), fixture)
+                verifier.verify(name, packages.get(name), boundPackage(nodeModules, name, path.join(nodeModules, parent)), fixture)
             }
         }
         prepared.fixtures[fixture.name] = { packages: subjectPackages }

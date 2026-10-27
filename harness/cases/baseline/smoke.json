@@ -1,0 +1,9 @@
+{
+    "description": "Single plugin build with uploaded source maps and release-tagged, resolved exceptions.",
+    "options": {
+        "sourcemaps": {
+            "releaseMode": "event"
+        }
+    },
+    "releases": 1
+}

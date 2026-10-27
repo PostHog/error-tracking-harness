@@ -19,8 +19,13 @@ The Docker image contains pinned fixture dependencies and CLIs. No network acces
 run time; use `--network none` and pin the image digest in CI. With no filters, the full conformance
 matrix runs. `--fixtures` selects names; `--tags` selects any matching tag (OR); both together
 intersect. `--cases` accepts comma-separated globs. `--cli` selects versions; `--cli-binary` uses
-a local executable instead. `--list` previews the selection without installing fixture packages
-or downloading CLIs. Unknown or empty selections fail. `--judge-only <run-dir>` rejudges saved
+a local executable instead. When testing an overridden or PR-prepared plugin tarball, the baked
+CLI versions are filtered by **that plugin's** `@posthog/cli` dependency range; slow framework
+fixtures use the oldest and newest compatible versions. Pinned base-image fixtures retain their
+existing conformance matrix (some intentionally require newer CLIs than their older plugin shim
+declares). An explicit `--cli-binary` bypasses this filter for compatibility experiments.
+`--list` previews the selection without installing fixture packages or downloading CLIs. Unknown
+or empty selections fail. `--judge-only <run-dir>` rejudges saved
 `evidence.json` files against the current case catalog.
 
 Every selected applicable fixture/case pair must execute at least one cell; CLI-incompatible skips
@@ -32,20 +37,12 @@ logs and built files live under `<artifacts>/<cli>/<fixture>/<case>/` (by defaul
 
 ## Prepared subject images (posthog-js CI)
 
-The base image contains all pinned fixture dependencies. To test PR-built npm tarballs without
-releasing a new base image, build a temporary derivative containing only the selected tarballs:
+The base image contains pinned fixture dependencies. The posthog-js pack job stages the fixed
+smoke suite's selected npm tarballs, `overrides.json` and `source.txt` as one artifact; the
+reusable workflow below downloads it and builds a temporary derivative from an inline Dockerfile.
+No repository checkout or credentials enter the build context.
 
-```sh
-# From posthog-js after packing its selected workspace dependencies.
-# The Docker context contains only tarballs and overrides.json (no checkout or credentials).
-docker build -f tooling/error-tracking-harness/Dockerfile.subject \
-  --build-arg HARNESS_IMAGE=ghcr.io/posthog/error-tracking-harness@sha256:<pinned-digest> \
-  --build-arg FIXTURES=rollup-4 -t error-tracking-harness:subject /path/to/subject-context
-docker run --rm --network none -v "$PWD/test-results:/artifacts" \
-  error-tracking-harness:subject --artifacts /artifacts --fixtures rollup-4 --cli 0.18.12 --cases baseline/event
-```
-
-At image build time, `/rig/harness/prepare-subject.mjs /subject/overrides.json rollup-4`
+At image build time, `/rig/harness/prepare-subject.mjs /subject/overrides.json <fixtures>`
 rewrites **only selected fixtures'** direct and transitive dependencies to mounted `file:`
 tarballs via pnpm overrides, then installs them once with network access and scripts disabled.
 The builder verifies the actual bytes and versions resolved by the consuming plugins, rejects
@@ -57,8 +54,8 @@ image or other cells. Summary, report, and per-cell evidence record the installe
 `@posthog/cli` in the tarball manifest is its npm shim, not the CLI executable. The harness
 selects the CLI binary independently with `--cli`, `--cli-binary` or the baked versions. Pack the
 npm shim matching the PR-built plugin's dependency when building the subject image; its networked
-postinstall is intentionally skipped. The `posthog-js` runner stages only its selected closure
-and that shim in the build context.
+postinstall is intentionally skipped. The posthog-js pack job stages the dependency closure
+for the six smoke fixtures and that shim in the build context.
 
 ### Legacy runtime overrides
 
@@ -67,6 +64,42 @@ accept named package tarballs or a `binaries.posthog-cli` executable; absent exp
 tags/names it selects fixtures using those packages. It is **not** used by posthog-js CI. A
 prepared image rejects runtime overrides to avoid mixing a verified installed graph with a
 second installation. Prefer a prepared image for new package-override consumers.
+
+## Reusable subject smoke workflow
+
+`.github/workflows/subject-smoke.yml` is called from posthog-js with `subject-artifact`
+and exactly one of `harness-source-ref` (build a temporary, unpublished harness image) or
+`harness-image` (pull a published digest). Pin the reusable workflow and source checkout to
+the **same** harness commit, for example:
+
+```yaml
+smoke:
+    needs: pack
+    uses: PostHog/error-tracking-harness/.github/workflows/subject-smoke.yml@<harness-commit>
+    with:
+        subject-artifact: error-tracking-subject
+        harness-source-ref: <same-harness-commit>
+```
+
+Once a matching image is published, replace `harness-source-ref` with
+`harness-image: ghcr.io/posthog/error-tracking-harness@sha256:<published-digest>`.
+
+The artifact must contain `overrides.json` (package paths under
+`/subject/`), `source.txt` (the caller's 40-character `github.sha`) and exactly the selected
+`.tgz` files, all at its root. The workflow verifies provenance and rejects extra files, builds
+one derivative image with the selected tarballs and installs dependencies with scripts disabled.
+It runs **only** rollup-4, vite-8-autocapture, webpack-5.112, next-14, next-15 and nuxt-4 against
+CLI 0.18.11, with one single-release smoke case per applicable mode. Runtime is `--network none`;
+the report and summary are uploaded when produced, full evidence on failure, and the report is
+added to the job summary.
+The harness repository's `run.yml` checks the same six-fixture smoke suite against its pinned packages. The full conformance matrix remains available when invoking `run.mjs` without filters.
+
+Source-build mode does not push an image to any registry; it builds the pinned harness code
+and PR-specific derivative on the caller's runner. Network access is confined to those image
+builds; the smoke cells run offline. A fresh source build takes longer than pulling a published
+image. The previous published 291c8246… digest lacks the new fixtures and cases; use source
+mode until a matching base image is published. Do not use a moving image tag. The harness
+`Image` workflow prints a digest to pin after publication.
 
 ## Fixture lifecycle
 
@@ -104,8 +137,12 @@ Each `fixtures/<name>/` is a standalone pinned project with `fixture.json` decla
 **tags**, build output, runtime and marked source lines that throw. Browser fixtures run in
 Chromium. HTTP fixtures start their server and optionally open a client page; `immutable` replays
 prior-release static assets to a later-release browser. Next and Nuxt fixtures exercise their
-respective build integrations. CLI-mode fixtures run `posthog-cli` on plain built output. To add a
-fixture, commit its lockfile, update the Dockerfile and CI fixture list, then run `pnpm check`.
+respective build integrations. `vite-8-autocapture` throws an uncaught browser error after the
+installed `posthog-js` lazily loads its exception-autocapture script from the loopback mock;
+it checks unhandled capture and symbolication without an external CDN. CLI-mode fixtures run
+`posthog-cli` on plain built output. To add a fixture, commit its lockfile and update the
+Dockerfile; add it to both smoke workflows only if it belongs in the fixed smoke suite, then run
+`pnpm check`.
 
 The active cases under `harness/cases/` assert one shared healthy-upload, event-mode contract.
 Every successful build must produce the declared exceptions, finished decodable symbol sets and

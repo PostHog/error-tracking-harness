@@ -1,7 +1,7 @@
 // Enumerates the matrix: cli × fixture × case, minus the cases a CLI is too old for.
 import { readdirSync, readFileSync, existsSync } from 'node:fs'
 import path from 'node:path'
-import { compare } from './semver.mjs'
+import { compare, satisfies } from './semver.mjs'
 import { validateCase, validateFixture } from './validate.mjs'
 
 export const compareVersions = compare
@@ -66,22 +66,26 @@ export function loadCases(root, patterns) {
 }
 
 /** `plugins` maps a fixture name to the plugin that selection puts in place. */
-// Slow fixtures (framework builds) run against the oldest and newest CLI only.
-function clisFor(fixture, clis) {
-    if (fixture.cliSelection !== 'edges' || clis.length <= 2) return clis
+// Slow fixtures (framework builds) run against the oldest and newest *compatible* CLI only.
+function clisFor(fixture, clis, range) {
+    // An explicitly supplied binary remains available for intentional compatibility experiments.
+    const compatible = range ? clis.filter((cli) => cli.version === 'custom' || (cli.version !== 'unknown' && satisfies(cli.version, range))) : clis
+    if (range && !compatible.length) throw new Error(`${fixture.name}: no selected CLI (${clis.map((cli) => cli.label).join(', ')}) satisfies ${fixture.plugin} dependency @posthog/cli ${range}`)
+    if (fixture.cliSelection !== 'edges' || compatible.length <= 2) return compatible
     // Among the CLIs the fixture accepts, the oldest and the newest.
-    const versioned = clis
+    const versioned = compatible
         .filter((cli) => cli.version !== 'custom' && cliAtLeast(cli, fixture.minCli))
         .sort((a, b) => compareVersions(a.version, b.version))
-    const custom = clis.filter((cli) => cli.version === 'custom')
+    const custom = compatible.filter((cli) => cli.version === 'custom')
     return [...new Set([versioned[0], versioned.at(-1), ...custom].filter(Boolean))]
 }
 
-export function planMatrix({ clis, fixtures, cases, plugins }) {
+export function planMatrix({ clis, fixtures, cases, plugins, cliRanges = new Map() }) {
     const entries = []
+    const selectedClis = new Map(fixtures.map((fixture) => [fixture.name, clisFor(fixture, clis, cliRanges.get(fixture.name))]))
     for (const cli of clis) {
         for (const fixture of fixtures) {
-            if (!clisFor(fixture, clis).includes(cli)) continue
+            if (!selectedClis.get(fixture.name).includes(cli)) continue
             const plugin = plugins.get(fixture.name)
             for (const kase of cases) {
                 // A case is written for one kind of fixture: `plugin` (the bundler plugin injects and

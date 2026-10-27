@@ -1,10 +1,11 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { prepareSubject } from '../prepare-subject.mjs'
+import { createTarballVerifier } from '../subject.mjs'
 
 function pack(dir, name, version, dependencies = {}) {
     const folder = path.join(dir, 'package')
@@ -57,6 +58,39 @@ test('image preparation installs tarballs once and cells copy the verified packa
         env: { ...process.env, HARNESS_PREPARED_SUBJECT: path.join(root, 'prepared-subject.json') }, stdio: 'pipe',
     })
     assert.equal(existsSync(path.join(dir, 'node_modules/@posthog/core/cell-marker')), false)
+}))
+
+test('one unpack verifies distinct installations, including a same-version mismatch', () => inDir((root) => {
+    const tarball = pack(root, '@posthog/core', '1.60.1')
+    const entry = { tarball, manifest: { name: '@posthog/core', version: '1.60.1' } }
+    const destinations = ['first', 'second', 'third'].map((name) => {
+        const dir = path.join(root, name)
+        mkdirSync(dir)
+        execFileSync('tar', ['-xzf', tarball, '-C', dir])
+        return path.join(dir, 'package')
+    })
+    const verifier = createTarballVerifier()
+    try {
+        verifier.verify('@posthog/core', entry, destinations[0], { name: 'fixture-a' })
+        // Subsequent locations are verified against the cached extraction, not a second tar read.
+        rmSync(tarball)
+        verifier.verify('@posthog/core', entry, destinations[1], { name: 'fixture-b' })
+        writeFileSync(path.join(destinations[2], 'identity.txt'), 'baked contents with the same version\n')
+        assert.throws(() => verifier.verify('@posthog/core', entry, destinations[2], { name: 'fixture-c' }), /was not installed from/)
+    } finally { verifier.close() }
+}))
+
+test('tarball verification rejects links before extracting them', () => inDir((root) => {
+    const folder = path.join(root, 'package')
+    mkdirSync(folder)
+    writeFileSync(path.join(folder, 'package.json'), JSON.stringify({ name: 'linked', version: '1.0.0' }))
+    symlinkSync('/etc/passwd', path.join(folder, 'escape'))
+    const tarball = path.join(root, 'linked.tgz')
+    execFileSync('tar', ['-czf', tarball, '-C', root, 'package'])
+    const verifier = createTarballVerifier()
+    try {
+        assert.throws(() => verifier.verify('linked', { tarball, manifest: { version: '1.0.0' } }, folder, { name: 'fixture' }), /unsupported tarball member/)
+    } finally { verifier.close() }
 }))
 
 test('preparation rejects a tarball unused by all selected fixtures', () => inDir((root) => {

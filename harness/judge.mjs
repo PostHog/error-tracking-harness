@@ -74,6 +74,7 @@ export function judge(evidence, kase) {
             failures.push(`${tag}: the plugin reported an error in the build log`)
         }
         if (release.mockErrors.length) failures.push(`${tag}: mock errors: ${release.mockErrors.join('; ')}`)
+        if (evidence.fixture.mode === 'autoexception' && !release.lazyExceptionScriptLoaded) failures.push(`${tag}: exception-autocapture script was not fetched from the installed package`)
 
         // Maps and comments count only for judged files: a map beside a file no tool could process
         // says nothing about cleanup.
@@ -201,6 +202,7 @@ function judgeEvents(events, { tag, expected: expectedAll, mode, release, throws
         const label = `${tag} ${name}`
         if (event.type !== throws[name].type) failures.push(`${label}: type ${event.type}, expected ${throws[name].type}`)
         if (event.value !== throws[name].value) failures.push(`${label}: value ${JSON.stringify(event.value)}`)
+        if (throws[name].autocaptured && event.mechanism?.handled !== false) failures.push(`${label}: automatic error must be unhandled`)
         if (event.stacktraceType !== 'raw') failures.push(`${label}: stacktrace type ${event.stacktraceType}`)
         const ours = event.frames.filter((frame) => frame.file)
         if (!ours.length) failures.push(`${label}: no frame points into dist (${event.frames.map((frame) => frame.filename)})`)

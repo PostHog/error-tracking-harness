@@ -1,0 +1,8 @@
+{
+    "mode": "nuxt",
+    "description": "Single Nuxt build with uploaded source maps and resolved exceptions.",
+    "options": {
+        "sourcemaps": {}
+    },
+    "releases": 1
+}
