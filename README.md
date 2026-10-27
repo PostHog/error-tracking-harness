@@ -67,8 +67,10 @@ second installation. Prefer a prepared image for new package-override consumers.
 
 ## Reusable subject smoke workflow
 
-`.github/workflows/subject-smoke.yml` is called from posthog-js with required
-`subject-artifact` and `harness-image` inputs, for example:
+`.github/workflows/subject-smoke.yml` is called from posthog-js with `subject-artifact`
+and exactly one of `harness-source-ref` (build a temporary, unpublished harness image) or
+`harness-image` (pull a published digest). Pin the reusable workflow and source checkout to
+the **same** harness commit, for example:
 
 ```yaml
 smoke:
@@ -76,8 +78,11 @@ smoke:
     uses: PostHog/error-tracking-harness/.github/workflows/subject-smoke.yml@<harness-commit>
     with:
         subject-artifact: error-tracking-subject
-        harness-image: ghcr.io/posthog/error-tracking-harness@sha256:<published-digest>
+        harness-source-ref: <same-harness-commit>
 ```
+
+Once a matching image is published, replace `harness-source-ref` with
+`harness-image: ghcr.io/posthog/error-tracking-harness@sha256:<published-digest>`.
 
 The artifact must contain `overrides.json` (package paths under
 `/subject/`), `source.txt` (the caller's 40-character `github.sha`) and exactly the selected
@@ -89,11 +94,12 @@ the report and summary are uploaded when produced, full evidence on failure, and
 added to the job summary.
 The harness repository's `run.yml` checks the same six-fixture smoke suite against its pinned packages. The full conformance matrix remains available when invoking `run.mjs` without filters.
 
-**Before enabling this workflow, publish a new harness base image and pin its digest** using the
-`harness-image` workflow input in posthog-js. The previous 291c8246… digest
-**does not contain vite-8-autocapture or the smoke cases**; the preflight fails loudly rather
-than silently running an incomplete suite. Do not use a moving image tag. The harness image's
-`Image` workflow prints the digest to pin when the updated harness has been published.
+Source-build mode does not push an image to any registry; it builds the pinned harness code
+and PR-specific derivative on the caller's runner. Network access is confined to those image
+builds; the smoke cells run offline. A fresh source build takes longer than pulling a published
+image. The previous published 291c8246… digest lacks the new fixtures and cases; use source
+mode until a matching base image is published. Do not use a moving image tag. The harness
+`Image` workflow prints a digest to pin after publication.
 
 ## Fixture lifecycle
 

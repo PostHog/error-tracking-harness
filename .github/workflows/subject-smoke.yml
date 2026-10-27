@@ -8,8 +8,12 @@ on:
                 required: true
                 type: string
             harness-image:
-                description: Digest-pinned harness image; update to an image containing the smoke fixtures and cases
-                required: true
+                description: Published harness image, pinned by digest; use this or harness-source-ref
+                required: false
+                type: string
+            harness-source-ref:
+                description: Harness commit SHA to build locally instead of pulling a published image
+                required: false
                 type: string
 
 permissions:
@@ -19,23 +23,28 @@ permissions:
 jobs:
     smoke:
         runs-on: ubuntu-24.04
-        timeout-minutes: 30
+        timeout-minutes: 45
         env:
             FIXTURES: rollup-4,vite-8-autocapture,webpack-5.112,next-14,next-15,nuxt-4
             CASES: baseline/smoke,next/smoke,nuxt/smoke,autoexception/baseline
             HARNESS_IMAGE: ${{ inputs.harness-image }}
+            HARNESS_REF: ${{ inputs.harness-source-ref }}
         steps:
             - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
               with:
                   name: ${{ inputs.subject-artifact }}
                   path: ${{ runner.temp }}/subject
-            - name: Validate subject and pinned image
+            - name: Validate subject and pinned harness input
               env:
                   SUBJECT: ${{ runner.temp }}/subject
                   SOURCE_SHA: ${{ github.sha }}
               run: |
                   set -euo pipefail
-                  [[ "$HARNESS_IMAGE" =~ ^ghcr\.io/posthog/error-tracking-harness@sha256:[0-9a-f]{64}$ ]] || { echo 'harness-image must be a pinned ghcr.io/posthog/error-tracking-harness digest' >&2; exit 1; }
+                  if [[ -n "$HARNESS_REF" ]]; then
+                      [[ -z "$HARNESS_IMAGE" && "$HARNESS_REF" =~ ^[0-9a-f]{40}$ ]] || { echo 'Use only a 40-character harness-source-ref SHA, not both image and source' >&2; exit 1; }
+                  else
+                      [[ "$HARNESS_IMAGE" =~ ^ghcr\.io/posthog/error-tracking-harness@sha256:[0-9a-f]{64}$ ]] || { echo 'harness-image must be a pinned ghcr.io/posthog/error-tracking-harness digest' >&2; exit 1; }
+                  fi
                   node --input-type=module <<'NODE'
                   import { readFileSync, readdirSync, lstatSync } from 'node:fs'
                   import path from 'node:path'
@@ -50,15 +59,32 @@ jobs:
                   if (!tarballs.length || tarballs.some((file) => typeof file !== 'string' || !/^\/subject\/[a-zA-Z0-9._-]+\.tgz$/.test(file))) throw new Error('Subject packages must reference /subject/<tarball>.tgz')
                   if (new Set(tarballs).size !== tarballs.length || files.sort().join() !== ['source.txt', 'overrides.json', ...tarballs.map((file) => path.basename(file))].sort().join()) throw new Error('Subject tarballs must exactly match overrides.json')
                   NODE
-                  docker pull "$HARNESS_IMAGE"
-                  # The old 291c... image predates vite-8-autocapture and the smoke cases.
-                  # Fail loudly until a new harness image is published and pinned by the caller.
+            - name: Checkout pinned harness source
+              if: ${{ inputs.harness-source-ref != '' }}
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+              with:
+                  repository: PostHog/error-tracking-harness
+                  ref: ${{ inputs.harness-source-ref }}
+                  path: harness-source
+                  persist-credentials: false
+            - name: Build harness image from source (not published)
+              if: ${{ inputs.harness-source-ref != '' }}
+              run: |
+                  set -euo pipefail
+                  test "$(git -C harness-source rev-parse HEAD)" = "$HARNESS_REF"
+                  docker build --platform linux/amd64 -t error-tracking-harness:source harness-source
+                  echo 'HARNESS_IMAGE=error-tracking-harness:source' >> "$GITHUB_ENV"
+            - name: Pull published harness image
+              if: ${{ inputs.harness-image != '' }}
+              run: docker pull "$HARNESS_IMAGE"
+            - name: Check harness fixture coverage
+              run: |
                   docker run --rm --network none --entrypoint sh "$HARNESS_IMAGE" -ec '
                     for fixture in rollup-4 vite-8-autocapture webpack-5.112 next-14 next-15 nuxt-4; do
-                      test -f "/rig/fixtures/$fixture/fixture.json" || { echo "Harness image lacks $fixture: pin a freshly published harness digest" >&2; exit 1; }
+                      test -f "/rig/fixtures/$fixture/fixture.json" || { echo "Harness image lacks $fixture: build from a newer source commit or pin a newer digest" >&2; exit 1; }
                     done
                     for kase in baseline/smoke next/smoke nuxt/smoke autoexception/baseline; do
-                      test -f "/rig/harness/cases/$kase.json" || { echo "Harness image lacks $kase: pin a freshly published harness digest" >&2; exit 1; }
+                      test -f "/rig/harness/cases/$kase.json" || { echo "Harness image lacks $kase: build from a newer source commit or pin a newer digest" >&2; exit 1; }
                     done
                     test -x /opt/posthog-cli/0.18.11/posthog-cli
                   '
