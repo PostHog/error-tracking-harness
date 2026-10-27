@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       posthog-node:
-        specifier: 5.56.1
-        version: 5.56.1
+        specifier: 5.57.2
+        version: 5.57.2
     devDependencies:
       rollup:
         specifier: 4.64.7
@@ -25,11 +25,11 @@ packages:
     os: [linux]
     libc: [glibc]
 
-  '@posthog/core@1.59.1':
-    resolution: {integrity: sha512-P39YgzQVDh6oz6wAzQXEnoHgTYpM7gifonmVKq1scAJco79h31XmmNVurRq9tTmmyIrr1uX8FHT0riCsyfV9AQ==}
+  '@posthog/core@1.61.0':
+    resolution: {integrity: sha512-FxOHbuxCZCFGb/46KdcBtilTX5ROeB4Gs8ZrWESzyNlCCxLw4/5xBVh8nfmPjbztuPvxRs5tOcpQ1kNnr2nlAA==}
 
-  '@posthog/types@1.416.0':
-    resolution: {integrity: sha512-0/9+02s/0uDyrH4G/qUg1yyl6gXUg8Uuxw/PlDad3KLzo9FFS9zS/kAQaEshx/saVGupj1aAy/4EUBxWisBogw==}
+  '@posthog/types@1.417.0':
+    resolution: {integrity: sha512-r/+gvmiE6egR6kkuMhEjOOE3Sm1pR00iFPQNoZZ0YvnZSsqGk7hK2IvQzcqjSRufG5Jf0EwhDMr5YOGtmf2/8g==}
 
   '@rollup/rollup-android-arm-eabi@4.64.7':
     resolution: {integrity: sha512-GFF2tHk0NqYVObrK0+/ps/LEXsV/v2q6Lyiy7mZr+Ej24fpQScvqK2ziz9NHeEQYnKWKym38Ml7dZbPtC9tuAw==}
@@ -177,8 +177,8 @@ packages:
     engines: {node: ^8.16.0 || ^10.6.0 || >=11.0.0}
     os: [darwin]
 
-  posthog-node@5.56.1:
-    resolution: {integrity: sha512-TlEeE5OHNbsIje/htLwvmxN45/X0FcMSsln15cHdQqybUGj9Ebd0yyziWec0Fi5YQwMHYCfJPcNdgol/s1lIFA==}
+  posthog-node@5.57.2:
+    resolution: {integrity: sha512-S03L9YC21EV0CIo7GW1lv/faTU0ENjO4uyFTuERxGIuDebjl3+UcRvJIq8RzAM2YJumpAlXPoDNyrxAvUZctfg==}
     engines: {node: ^20.20.0 || >=22.22.0}
     peerDependencies:
       '@opentelemetry/api': ^1.2.0
@@ -199,11 +199,11 @@ snapshots:
   '@napi-rs/lzma-linux-x64-gnu@1.5.1':
     optional: true
 
-  '@posthog/core@1.59.1':
+  '@posthog/core@1.61.0':
     dependencies:
-      '@posthog/types': 1.416.0
+      '@posthog/types': 1.417.0
 
-  '@posthog/types@1.416.0': {}
+  '@posthog/types@1.417.0': {}
 
   '@rollup/rollup-android-arm-eabi@4.64.7':
     optional: true
@@ -285,9 +285,9 @@ snapshots:
   fsevents@2.3.3:
     optional: true
 
-  posthog-node@5.56.1:
+  posthog-node@5.57.2:
     dependencies:
-      '@posthog/core': 1.59.1
+      '@posthog/core': 1.61.0
 
   rollup@4.64.7:
     dependencies:

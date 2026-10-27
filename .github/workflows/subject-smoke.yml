@@ -25,7 +25,7 @@ jobs:
         runs-on: ubuntu-24.04
         timeout-minutes: 45
         env:
-            FIXTURES: rollup-4,vite-8-autocapture,webpack-5.112,next-14,next-15,nuxt-4
+            FIXTURES: rollup-4,vite-8-autocapture,webpack-5.112,next-14,next-15,next-16-webpack,next-16-turbopack,nuxt-4
             CASES: baseline/smoke,next/smoke,nuxt/smoke,autoexception/baseline
             HARNESS_IMAGE: ${{ inputs.harness-image }}
             HARNESS_REF: ${{ inputs.harness-source-ref }}
@@ -80,7 +80,7 @@ jobs:
             - name: Check harness fixture coverage
               run: |
                   docker run --rm --network none --entrypoint sh "$HARNESS_IMAGE" -ec '
-                    for fixture in rollup-4 vite-8-autocapture webpack-5.112 next-14 next-15 nuxt-4; do
+                    for fixture in rollup-4 vite-8-autocapture webpack-5.112 next-14 next-15 next-16-webpack next-16-turbopack nuxt-4; do
                       test -f "/rig/fixtures/$fixture/fixture.json" || { echo "Harness image lacks $fixture: build from a newer source commit or pin a newer digest" >&2; exit 1; }
                     done
                     for kase in baseline/smoke next/smoke nuxt/smoke autoexception/baseline; do

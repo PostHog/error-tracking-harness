@@ -9,10 +9,10 @@
     },
     "dependencies": {
         "nuxt": "4.6.1",
-        "posthog-node": "5.56.1",
+        "posthog-node": "5.57.2",
         "vue": "3.5.22"
     },
     "devDependencies": {
-        "@posthog/nuxt": "1.7.91"
+        "@posthog/nuxt": "1.8.0"
     }
 }

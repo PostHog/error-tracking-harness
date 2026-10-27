@@ -1,4 +1,9 @@
 minimumReleaseAge: 10080
+# Test newly published PostHog integrations without waiting for the third-party cooldown.
+minimumReleaseAgeExclude:
+    - "@posthog/*"
+    - posthog-js
+    - posthog-node
 nodeLinker: hoisted
 # Playwright only drives Chromium; the browser itself is installed with `pnpm install:browser`.
 allowBuilds: {}

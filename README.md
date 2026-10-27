@@ -15,6 +15,10 @@ node harness/run.mjs --cli-binary /path/to/posthog-cli --tags next,browser --cas
 node harness/run.mjs --cli 0.18.11 --fixtures next-15,next-16-webpack --cases next/baseline-event --list
 ```
 
+Fixture lockfiles pin exact versions for reproducible builds. pnpm retains a seven-day release-age
+check for third-party dependencies but exempts PostHog packages, so newly published integrations
+can be tested immediately. Refresh the fixture pins and lockfiles to pick up new releases.
+
 The Docker image contains pinned fixture dependencies and CLIs. No network access is required at
 run time; use `--network none` and pin the image digest in CI. With no filters, the full conformance
 matrix runs. `--fixtures` selects names; `--tags` selects any matching tag (OR); both together
@@ -55,7 +59,7 @@ image or other cells. Summary, report, and per-cell evidence record the installe
 selects the CLI binary independently with `--cli`, `--cli-binary` or the baked versions. Pack the
 npm shim matching the PR-built plugin's dependency when building the subject image; its networked
 postinstall is intentionally skipped. The posthog-js pack job stages the dependency closure
-for the six smoke fixtures and that shim in the build context.
+for the smoke fixtures and that shim in the build context.
 
 ### Legacy runtime overrides
 
@@ -88,11 +92,13 @@ The artifact must contain `overrides.json` (package paths under
 `/subject/`), `source.txt` (the caller's 40-character `github.sha`) and exactly the selected
 `.tgz` files, all at its root. The workflow verifies provenance and rejects extra files, builds
 one derivative image with the selected tarballs and installs dependencies with scripts disabled.
-It runs **only** rollup-4, vite-8-autocapture, webpack-5.112, next-14, next-15 and nuxt-4 against
-CLI 0.18.11, with one single-release smoke case per applicable mode. Runtime is `--network none`;
+It runs **only** rollup-4, vite-8-autocapture, webpack-5.112, next-14, next-15,
+next-16-webpack, next-16-turbopack and nuxt-4 against CLI 0.18.11, with one single-release smoke
+case per applicable mode. Runtime is `--network none`;
 the report and summary are uploaded when produced, full evidence on failure, and the report is
 added to the job summary.
-The harness repository's `run.yml` checks the same six-fixture smoke suite against its pinned packages. The full conformance matrix remains available when invoking `run.mjs` without filters.
+The harness repository's `run.yml` checks the same eight-fixture smoke suite against its pinned
+packages. The full conformance matrix remains available when invoking `run.mjs` without filters.
 
 Source-build mode does not push an image to any registry; it builds the pinned harness code
 and PR-specific derivative on the caller's runner. Network access is confined to those image
