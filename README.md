@@ -19,8 +19,13 @@ The Docker image contains pinned fixture dependencies and CLIs. No network acces
 run time; use `--network none` and pin the image digest in CI. With no filters, the full conformance
 matrix runs. `--fixtures` selects names; `--tags` selects any matching tag (OR); both together
 intersect. `--cases` accepts comma-separated globs. `--cli` selects versions; `--cli-binary` uses
-a local executable instead. `--list` previews the selection without installing fixture packages
-or downloading CLIs. Unknown or empty selections fail. `--judge-only <run-dir>` rejudges saved
+a local executable instead. When testing an overridden or PR-prepared plugin tarball, the baked
+CLI versions are filtered by **that plugin's** `@posthog/cli` dependency range; slow framework
+fixtures use the oldest and newest compatible versions. Pinned base-image fixtures retain their
+existing conformance matrix (some intentionally require newer CLIs than their older plugin shim
+declares). An explicit `--cli-binary` bypasses this filter for compatibility experiments.
+`--list` previews the selection without installing fixture packages or downloading CLIs. Unknown
+or empty selections fail. `--judge-only <run-dir>` rejudges saved
 `evidence.json` files against the current case catalog.
 
 Every selected applicable fixture/case pair must execute at least one cell; CLI-incompatible skips

@@ -9,6 +9,7 @@ import { cliAtLeast, compareVersions, loadCases, loadFixtures, planMatrix } from
 import { validateCase, validateFixture } from '../validate.mjs'
 import { createErrorTrackingApi } from '../mock-api.mjs'
 import { collectEvents } from '../collect.mjs'
+import { pluginCliRange } from '../subject.mjs'
 import { executeCase } from '../execute.mjs'
 import { decodeSymbolSet, originalPosition } from '../symbol-data.mjs'
 
@@ -40,6 +41,50 @@ test('matrix can be planned from metadata alone', () => {
     const entries = planMatrix({ fixtures, cases, clis, plugins, metadataOnly: true })
     assert.equal(entries.length, 1)
     assert.equal(entries[0].skipped, undefined)
+})
+
+test('CLI selection respects the installed or overridden plugin dependency before choosing edges', () => {
+    const clis = ['0.16.2', '0.17.0', '0.18.11', '0.18.12'].map((version) => ({ label: version, version }))
+    const fixtures = [{ name: 'rollup', plugin: '@posthog/rollup-plugin' },
+        { name: 'next', plugin: '@posthog/nextjs-config', cliSelection: 'edges' }]
+    const cases = [{ name: 'baseline', mode: 'plugin' }]
+    const plugins = new Map(fixtures.map((fixture) => [fixture.name, { name: fixture.plugin, version: '1.0.0' }]))
+    const names = (entries) => entries.map((entry) => `${entry.fixture.name}/${entry.cli.version}`)
+    const cliRanges = new Map([['rollup', '~0.16.2'], ['next', '~0.18.11']])
+    assert.deepEqual(names(planMatrix({ clis, fixtures, cases, plugins, cliRanges })),
+        ['rollup/0.16.2', 'next/0.18.11', 'next/0.18.12'])
+    assert.throws(() => planMatrix({ clis: [clis[1]], fixtures: [fixtures[0]], cases, plugins, cliRanges }),
+        /no selected CLI.*satisfies.*@posthog\/cli ~0.16.2/)
+    assert.deepEqual(names(planMatrix({ clis: [{ label: 'custom', version: 'custom' }], fixtures: [fixtures[0]], cases, plugins, cliRanges })),
+        ['rollup/custom'])
+})
+
+test('CLI range uses the PR plugin manifest, not the pinned plugin or installed npm shim', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'harness-cli-range-'))
+    try {
+        const plugin = '@posthog/rollup-plugin'
+        const location = path.join(dir, 'node_modules', plugin)
+        mkdirSync(location, { recursive: true })
+        writeFileSync(path.join(location, 'package.json'), JSON.stringify({ name: plugin, dependencies: { '@posthog/cli': '~0.16.2' } }))
+        const fixture = { name: 'rollup', dir, plugin }
+        assert.equal(pluginCliRange(fixture), null) // Keep the pinned base-image conformance matrix.
+        const overrides = new Map([[plugin, { manifest: { name: plugin, dependencies: { '@posthog/cli': '~0.18.11' } } }]])
+        assert.equal(pluginCliRange(fixture, overrides), '~0.18.11')
+        assert.throws(() => pluginCliRange(fixture, new Map([[plugin, { manifest: { name: plugin } }]])), /does not declare/)
+        const preparedFile = path.join(dir, 'prepared-subject.json')
+        writeFileSync(preparedFile, JSON.stringify({ fixtures: { rollup: { packages: { [plugin]: { version: '1.0.0' } } } } }))
+        const previous = process.env.HARNESS_PREPARED_SUBJECT
+        try {
+            process.env.HARNESS_PREPARED_SUBJECT = preparedFile
+            const { pluginCliRange: preparedCliRange } = await import(`../subject.mjs?prepared-range-test=${Date.now()}`)
+            assert.equal(preparedCliRange(fixture), '~0.16.2')
+        } finally {
+            if (previous === undefined) delete process.env.HARNESS_PREPARED_SUBJECT
+            else process.env.HARNESS_PREPARED_SUBJECT = previous
+        }
+    } finally {
+        rmSync(dir, { recursive: true, force: true })
+    }
 })
 
 test('an untagged autocaptured exception is identified by its type and value', () => {

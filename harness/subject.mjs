@@ -48,6 +48,23 @@ export function loadOverrides(file) {
     return { packages, cli }
 }
 
+// For a PR-built plugin, use its declared CLI dependency to select baked binaries. Pinned
+// conformance fixtures retain their existing matrix: some deliberately exercise newer CLI
+// capabilities than their older published plugin's npm shim declares.
+export function pluginCliRange(fixture, overrides = new Map(), { metadataOnly = false } = {}) {
+    if (!fixture.plugin) return null
+    const override = overrides.get(fixture.plugin)?.manifest
+    const preparedPlugin = preparedFixtures[fixture.name]?.packages?.[fixture.plugin]
+    if (!override && !preparedPlugin) return null
+    const file = path.join(fixture.dir, 'node_modules', fixture.plugin, 'package.json')
+    const manifest = override ?? (existsSync(file) ? manifestAt(file) : null)
+    if (!manifest && metadataOnly) return null
+    if (!manifest) throw new Error(`${fixture.name}: prepared plugin ${fixture.plugin} is not installed`)
+    const range = manifest.dependencies?.['@posthog/cli']
+    if (typeof range !== 'string' || !range) throw new Error(`${fixture.name}: ${fixture.plugin} does not declare an @posthog/cli dependency`)
+    return range
+}
+
 export function selectedPlugin(fixture, overrides = new Map(), { metadataOnly = false } = {}) {
     if (!fixture.plugin) return fixture.mode === 'cli'
         ? { name: 'posthog-cli', version: 'cli' }
