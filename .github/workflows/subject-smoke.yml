@@ -1,0 +1,108 @@
+name: Subject smoke
+
+on:
+    workflow_call:
+        inputs:
+            subject-artifact:
+                description: Artifact containing overrides.json, source.txt and selected npm tarballs at its root
+                required: true
+                type: string
+            harness-image:
+                description: Digest-pinned harness image; update to an image containing the smoke fixtures and cases
+                required: true
+                type: string
+
+permissions:
+    actions: read
+    contents: read
+
+jobs:
+    smoke:
+        runs-on: ubuntu-24.04
+        timeout-minutes: 30
+        env:
+            FIXTURES: rollup-4,vite-8-autocapture,webpack-5.112,next-14,next-15,nuxt-4
+            CASES: baseline/smoke,next/smoke,nuxt/smoke,autoexception/baseline
+            HARNESS_IMAGE: ${{ inputs.harness-image }}
+        steps:
+            - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+              with:
+                  name: ${{ inputs.subject-artifact }}
+                  path: ${{ runner.temp }}/subject
+            - name: Validate subject and pinned image
+              env:
+                  SUBJECT: ${{ runner.temp }}/subject
+                  SOURCE_SHA: ${{ github.sha }}
+              run: |
+                  set -euo pipefail
+                  [[ "$HARNESS_IMAGE" =~ ^ghcr\.io/posthog/error-tracking-harness@sha256:[0-9a-f]{64}$ ]] || { echo 'harness-image must be a pinned ghcr.io/posthog/error-tracking-harness digest' >&2; exit 1; }
+                  node --input-type=module <<'NODE'
+                  import { readFileSync, readdirSync, lstatSync } from 'node:fs'
+                  import path from 'node:path'
+                  const dir = process.env.SUBJECT
+                  const files = readdirSync(dir)
+                  if (files.some((file) => !lstatSync(path.join(dir, file)).isFile())) throw new Error('Subject artifact must contain only regular files at its root')
+                  const source = readFileSync(path.join(dir, 'source.txt'), 'utf8').trim()
+                  if (!/^[0-9a-f]{40}$/.test(source) || source !== process.env.SOURCE_SHA) throw new Error(`Subject source SHA ${source} differs from caller ${process.env.SOURCE_SHA}`)
+                  const manifest = JSON.parse(readFileSync(path.join(dir, 'overrides.json'), 'utf8'))
+                  if (Object.keys(manifest).join() !== 'packages' || !manifest.packages || Array.isArray(manifest.packages)) throw new Error('Expected only packages in overrides.json')
+                  const tarballs = Object.values(manifest.packages)
+                  if (!tarballs.length || tarballs.some((file) => typeof file !== 'string' || !/^\/subject\/[a-zA-Z0-9._-]+\.tgz$/.test(file))) throw new Error('Subject packages must reference /subject/<tarball>.tgz')
+                  if (new Set(tarballs).size !== tarballs.length || files.sort().join() !== ['source.txt', 'overrides.json', ...tarballs.map((file) => path.basename(file))].sort().join()) throw new Error('Subject tarballs must exactly match overrides.json')
+                  NODE
+                  docker pull "$HARNESS_IMAGE"
+                  # The old 291c... image predates vite-8-autocapture and the smoke cases.
+                  # Fail loudly until a new harness image is published and pinned by the caller.
+                  docker run --rm --network none --entrypoint sh "$HARNESS_IMAGE" -ec '
+                    for fixture in rollup-4 vite-8-autocapture webpack-5.112 next-14 next-15 nuxt-4; do
+                      test -f "/rig/fixtures/$fixture/fixture.json" || { echo "Harness image lacks $fixture: pin a freshly published harness digest" >&2; exit 1; }
+                    done
+                    for kase in baseline/smoke next/smoke nuxt/smoke autoexception/baseline; do
+                      test -f "/rig/harness/cases/$kase.json" || { echo "Harness image lacks $kase: pin a freshly published harness digest" >&2; exit 1; }
+                    done
+                    test -x /opt/posthog-cli/0.18.11/posthog-cli
+                  '
+            - name: Prepare subject image (networked build only)
+              env:
+                  SUBJECT: ${{ runner.temp }}/subject
+              run: |
+                  set -euo pipefail
+                  docker build -f - --build-arg "HARNESS_IMAGE=$HARNESS_IMAGE" --build-arg "FIXTURES=$FIXTURES" -t error-tracking-harness:subject "$SUBJECT" <<'DOCKERFILE'
+                  ARG HARNESS_IMAGE
+                  FROM ${HARNESS_IMAGE}
+                  ARG FIXTURES
+                  COPY . /subject/
+                  RUN node /rig/harness/prepare-subject.mjs /subject/overrides.json "$FIXTURES"
+                  DOCKERFILE
+            - name: Run fixed offline smoke suite
+              run: |
+                  set -euo pipefail
+                  mkdir -p "$RUNNER_TEMP/smoke-results"
+                  docker run --rm --network none \
+                    -v "$RUNNER_TEMP/smoke-results:/artifacts" \
+                    error-tracking-harness:subject \
+                    --artifacts /artifacts --fixtures "$FIXTURES" --cli 0.18.11 --cases "$CASES"
+            - name: Report
+              if: always()
+              run: |
+                  if [ -f "$RUNNER_TEMP/smoke-results/report.md" ]; then
+                      cat "$RUNNER_TEMP/smoke-results/report.md" >> "$GITHUB_STEP_SUMMARY"
+                  else
+                      echo 'Subject smoke produced no report; inspect the failed setup/build step.' >> "$GITHUB_STEP_SUMMARY"
+                  fi
+            - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+              if: always()
+              with:
+                  name: subject-smoke-report
+                  path: |
+                      ${{ runner.temp }}/smoke-results/report.md
+                      ${{ runner.temp }}/smoke-results/summary.json
+                  retention-days: 7
+                  if-no-files-found: ignore
+            - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+              if: failure()
+              with:
+                  name: subject-smoke-evidence
+                  path: ${{ runner.temp }}/smoke-results
+                  retention-days: 7
+                  if-no-files-found: ignore

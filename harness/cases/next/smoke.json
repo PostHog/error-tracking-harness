@@ -1,0 +1,10 @@
+{
+    "mode": "next",
+    "description": "Single Next.js build with uploaded server/browser source maps and resolved exceptions.",
+    "options": {
+        "sourcemaps": {
+            "releaseMode": "event"
+        }
+    },
+    "releases": 1
+}
