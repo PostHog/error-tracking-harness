@@ -215,12 +215,14 @@ export function collectEvents({ events, chunks, api, work, throws, served }) {
             const set = crashChunk && api.symbolSets.find((candidate) => candidate.chunk_id === crashChunk.chunkId)
             const resolved =
                 set?.finished && set.upload ? (originalPosition(set.upload.sourcemap, crash.lineno, crash.colno) ?? null) : null
-            const name = properties.harness_case
+            const name = properties.harness_case ?? Object.entries(throws).find(([, spec]) =>
+                spec.autocaptured && exception?.type === spec.type && exception?.value === spec.value)?.[0]
             return {
                 case: name,
                 expected: throws[name] ?? null,
                 type: exception?.type ?? null,
                 value: exception?.value ?? null,
+                mechanism: exception?.mechanism ?? null,
                 stacktraceType: exception?.stacktrace?.type ?? null,
                 releaseId: properties.$release_id ?? null,
                 frames: frames.map((frame) => {

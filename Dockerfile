@@ -22,6 +22,7 @@ COPY fixtures/next-16-webpack/package.json fixtures/next-16-webpack/pnpm-workspa
 COPY fixtures/next-16-turbopack/package.json fixtures/next-16-turbopack/pnpm-workspace.yaml fixtures/next-16-turbopack/pnpm-lock.yaml fixtures/next-16-turbopack/
 COPY fixtures/nuxt-4/package.json fixtures/nuxt-4/pnpm-workspace.yaml fixtures/nuxt-4/pnpm-lock.yaml fixtures/nuxt-4/
 COPY fixtures/vite-8-sri/package.json fixtures/vite-8-sri/pnpm-workspace.yaml fixtures/vite-8-sri/pnpm-lock.yaml fixtures/vite-8-sri/
+COPY fixtures/vite-8-autocapture/package.json fixtures/vite-8-autocapture/pnpm-workspace.yaml fixtures/vite-8-autocapture/pnpm-lock.yaml fixtures/vite-8-autocapture/
 COPY fixtures/webpack-5.112-sri/package.json fixtures/webpack-5.112-sri/pnpm-workspace.yaml fixtures/webpack-5.112-sri/pnpm-lock.yaml fixtures/webpack-5.112-sri/
 # Build scripts run only where a fixture's pnpm-workspace.yaml allows them: @posthog/cli's
 # postinstall, which downloads the binary the plugins resolve when given no path.

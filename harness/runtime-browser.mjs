@@ -41,7 +41,7 @@ export async function runBrowser({ fixture, work, host, expectedEvents, mock, lo
         let expected = 0
         for (const trigger of triggers) {
             expected += trigger.expects.length
-            const page = await openPage({ origin, page: trigger.page, host, expectedEvents: Math.min(expected, expectedEvents), mock, replay, captureTimeoutMs })
+            const page = await openPage({ origin, page: trigger.page, host, expectedEvents: Math.min(expected, expectedEvents), expectedPageErrors: trigger.pageErrors, mock, replay, captureTimeoutMs })
             if (page.code !== 0) result.code = 1
             result.pageErrors.push(...page.pageErrors)
             result.consoleErrors.push(...page.consoleErrors)
@@ -60,7 +60,7 @@ export async function runBrowser({ fixture, work, host, expectedEvents, mock, lo
 // the mock. With `replay`, requests for immutable assets that existed in the previous release
 // are answered with that release's bytes, as a browser holding a tab open across a deploy
 // would see them (posthog-js#5332): the page must still work and report the new release.
-export async function openPage({ origin, page: pagePath, host, expectedEvents, mock, replay, captureTimeoutMs = 20_000 }) {
+export async function openPage({ origin, page: pagePath, host, expectedEvents, expectedPageErrors = [], mock, replay, captureTimeoutMs = 20_000 }) {
     const { chromium } = createRequire(path.join(harnessRoot, 'package.json'))('playwright')
     const browser = await chromium.launch({ headless: true })
     const pageErrors = []
@@ -88,7 +88,9 @@ export async function openPage({ origin, page: pagePath, host, expectedEvents, m
         const deadline = Date.now() + captureTimeoutMs
         while (Date.now() < deadline && captured() < expectedEvents) await new Promise((resolve) => setTimeout(resolve, 200))
         await page.waitForTimeout(500)
-        return { code: captured() >= expectedEvents && pageErrors.length === 0 ? 0 : 1, origin, pageErrors, consoleErrors, failedRequests, replayed }
+        const expectedErrorsObserved = expectedPageErrors.every((message) => pageErrors.filter((error) => error.includes(message)).length === 1)
+        const unexpectedErrors = pageErrors.filter((error) => !expectedPageErrors.some((message) => error.includes(message)))
+        return { code: captured() >= expectedEvents && expectedErrorsObserved && !unexpectedErrors.length ? 0 : 1, origin, pageErrors, consoleErrors, failedRequests, replayed }
     } finally {
         await browser.close()
     }

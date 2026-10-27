@@ -1,0 +1,6 @@
+minimumReleaseAge: 10080
+nodeLinker: hoisted
+# The CLI package downloads its binary in postinstall; core-js only prints a banner.
+allowBuilds:
+    "@posthog/cli": true
+    core-js: false

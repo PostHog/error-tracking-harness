@@ -1,0 +1,13 @@
+{
+    "name": "harness-vite-8-autocapture",
+    "private": true,
+    "type": "module",
+    "packageManager": "pnpm@11.7.0",
+    "scripts": { "build": "vite build" },
+    "dependencies": { "posthog-js": "1.438.12" },
+    "devDependencies": {
+        "@posthog/rollup-plugin": "1.6.1",
+        "vite": "8.3.4",
+        "vite-plugin-sri3": "2.0.0"
+    }
+}

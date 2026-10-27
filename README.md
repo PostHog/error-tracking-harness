@@ -104,8 +104,11 @@ Each `fixtures/<name>/` is a standalone pinned project with `fixture.json` decla
 **tags**, build output, runtime and marked source lines that throw. Browser fixtures run in
 Chromium. HTTP fixtures start their server and optionally open a client page; `immutable` replays
 prior-release static assets to a later-release browser. Next and Nuxt fixtures exercise their
-respective build integrations. CLI-mode fixtures run `posthog-cli` on plain built output. To add a
-fixture, commit its lockfile, update the Dockerfile and CI fixture list, then run `pnpm check`.
+respective build integrations. `vite-8-autocapture` throws an uncaught browser error after the
+installed `posthog-js` lazily loads its exception-autocapture script from the loopback mock;
+it checks unhandled capture and symbolication without an external CDN. CLI-mode fixtures run
+`posthog-cli` on plain built output. To add a fixture, commit its lockfile, update the Dockerfile
+and CI fixture list, then run `pnpm check`.
 
 The active cases under `harness/cases/` assert one shared healthy-upload, event-mode contract.
 Every successful build must produce the declared exceptions, finished decodable symbol sets and

@@ -159,7 +159,7 @@ async function runFixture({ fixture, work, options, host, binPath, mock, log, re
                 .reduce((count, trigger) => count + trigger.expects.length, 0)
             for (const trigger of browserTriggers) {
                 expected += trigger.expects.length
-                const page = await openPage({ origin, page: trigger.page, host, expectedEvents: expected, mock, replay })
+                const page = await openPage({ origin, page: trigger.page, host, expectedEvents: expected, expectedPageErrors: trigger.pageErrors, mock, replay })
                 if (page.code !== 0) result.code = 1
                 result.pageErrors.push(...page.pageErrors)
                 result.consoleErrors.push(...page.consoleErrors)
@@ -178,7 +178,14 @@ export async function executeCase({ cli, fixture, kase, overrides, output }) {
     mkdirSync(output, { recursive: true })
     const work = mkdtempSync(path.join(tmpdir(), 'error-tracking-harness-'))
     const api = createErrorTrackingApi({ apiKey: API_KEY, projectId: PROJECT_ID, fault: kase.fault, server: kase.server })
-    const mock = createMockServer({ adapter: (request) => api.route(request) })
+    const mock = createMockServer({ adapter: (request) => {
+        // Fetch the actual lazy extension from the installed posthog-js tarball, never the CDN.
+        if (fixture.mode === 'autoexception' && request.method === 'GET' && /^\/static\/(?:[^/]+\/)?exception-autocapture\.js$/.test(request.path)) {
+            return { body: readFileSync(path.join(work, 'node_modules/posthog-js/dist/exception-autocapture.js')),
+                headers: { 'Content-Type': 'text/javascript' } }
+        }
+        return api.route(request)
+    } })
     let apiStarted = false
     let mockStarted = false
     const evidence = {
@@ -188,6 +195,7 @@ export async function executeCase({ cli, fixture, kase, overrides, output }) {
             bundler: fixture.bundler,
             version: fixture.version,
             runtime: fixture.lifecycle.runtime.driver,
+            mode: fixture.mode ?? 'plugin',
             immutable: fixture.immutable ?? null,
             volatileChunks: fixture.volatileChunks ?? [],
             optionalIds: fixture.optionalIds ?? [],
@@ -317,6 +325,8 @@ export async function executeCase({ cli, fixture, kase, overrides, output }) {
                 runtime: runtime && { code: runtime.code, signal: runtime.signal ?? null, requests: runtime.requests ?? null, pageErrors: runtime.pageErrors ?? null, failedRequests: runtime.failedRequests ?? null, replayed: runtime.replayed ?? null },
                 events,
                 mockErrors: [...state.errors, ...mock.inspect().errors],
+                lazyExceptionScriptLoaded: mock.inspect().requests.some((request) => request.method === 'GET' &&
+                    /^\/static\/(?:[^/]+\/)?exception-autocapture\.js$/.test(request.path) && request.status === 200),
             })
             // Keep what each later release needs for the cross-release checks.
             previousReleases.push({ chunks, events: mock.inspect().events, served })

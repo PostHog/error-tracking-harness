@@ -66,7 +66,8 @@ export function validateLifecycle(lifecycle, name, throws) {
     const covered = new Set()
     for (const [index, trigger] of lifecycle.triggers.entries()) {
         const id = `${label}.triggers[${index}]`
-        keys(trigger, ['kind', 'command', 'path', 'page', 'expects', 'timeoutMs'], id)
+        keys(trigger, ['kind', 'command', 'path', 'page', 'expects', 'pageErrors', 'timeoutMs'], id)
+        if (trigger.pageErrors !== undefined && (trigger.kind !== 'browser' || !Array.isArray(trigger.pageErrors) || !trigger.pageErrors.length || trigger.pageErrors.some((message) => typeof message !== 'string' || !message))) throw new Error(`${id}: invalid expected page errors`)
         if (trigger.timeoutMs !== undefined && (!Number.isInteger(trigger.timeoutMs) || trigger.timeoutMs < 1)) throw new Error(`${id}: invalid timeoutMs`)
         if (!Array.isArray(trigger.expects) || !trigger.expects.length || trigger.expects.some((expected) => !(expected in throws))) throw new Error(`${id}: unknown or missing expected throws`)
         for (const expected of trigger.expects) covered.add(expected)

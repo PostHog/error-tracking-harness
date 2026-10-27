@@ -1,0 +1,5 @@
+{
+    "mode": "autoexception",
+    "description": "A real uncaught browser error is captured by the lazy-loaded exception-autocapture script from the installed posthog-js tarball, then resolves through the plugin-uploaded source map.",
+    "options": { "sourcemaps": { "releaseMode": "event" } }
+}

@@ -1,0 +1,28 @@
+{
+    "bundler": "vite",
+    "mode": "autoexception",
+    "tags": ["vite", "browser", "error-tracking"],
+    "version": "8.3.4",
+    "plugin": "@posthog/rollup-plugin",
+    "distGlobs": ["**/*.js", "**/*.map"],
+    "integrity": "dist/index.html",
+    "lifecycle": {
+        "workspace": { "adapter": "node-modules" },
+        "build": { "argv": ["node_modules/.bin/vite", "build"] },
+        "outputs": { "root": "dist" },
+        "runtime": { "driver": "browser", "serve": "dist" },
+        "triggers": [{
+            "kind": "browser", "page": "/index.html",
+            "expects": ["uncaught"], "pageErrors": ["boom from uncaught exception"]
+        }]
+    },
+    "throws": {
+        "uncaught": {
+            "file": "src/boom.js",
+            "marker": "harness:throw:uncaught",
+            "type": "Error",
+            "value": "boom from uncaught exception",
+            "autocaptured": true
+        }
+    }
+}
