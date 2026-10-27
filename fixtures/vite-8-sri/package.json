@@ -7,10 +7,10 @@
         "build": "vite build"
     },
     "dependencies": {
-        "posthog-js": "1.438.12"
+        "posthog-js": "1.439.0"
     },
     "devDependencies": {
-        "@posthog/rollup-plugin": "1.6.1",
+        "@posthog/rollup-plugin": "1.6.2",
         "vite": "8.3.4",
         "vite-plugin-sri3": "2.0.0"
     }

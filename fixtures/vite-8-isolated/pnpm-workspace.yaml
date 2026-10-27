@@ -1,4 +1,9 @@
 minimumReleaseAge: 10080
+# Test newly published PostHog integrations without waiting for the third-party cooldown.
+minimumReleaseAgeExclude:
+    - "@posthog/*"
+    - posthog-js
+    - posthog-node
 # pnpm's default layout: only direct dependencies at the top level (posthog-js#2968).
 nodeLinker: isolated
 allowBuilds:

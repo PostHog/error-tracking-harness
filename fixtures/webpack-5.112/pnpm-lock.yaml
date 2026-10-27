@@ -9,12 +9,12 @@ importers:
   .:
     dependencies:
       posthog-node:
-        specifier: 5.56.1
-        version: 5.56.1
+        specifier: 5.57.2
+        version: 5.57.2
     devDependencies:
       '@posthog/webpack-plugin':
-        specifier: 1.7.1
-        version: 1.7.1(webpack@5.112.0)
+        specifier: 1.8.0
+        version: 1.8.0(webpack@5.112.0)
       webpack:
         specifier: 5.112.0
         version: 5.112.0(webpack-cli@6.0.1)
@@ -44,22 +44,22 @@ packages:
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
 
-  '@posthog/cli@0.16.2':
-    resolution: {integrity: sha512-h8bpf9ffBUH/Z9IoyGV+wiI+vS8rIPorKT3eKQXuzuwawO0G7Qvy+hDd7HQ9YJjHByYZ77yPPQvrSs4WsqTUCg==}
+  '@posthog/cli@0.18.12':
+    resolution: {integrity: sha512-/eT9riWOkBb9uwsdOxQgW3fan/T3hwT8rvwZCzPl3DAgSBEhzpP59usD0fyFS++X2967E5AQe74nrBw1rywf6A==}
     engines: {node: '>=14.14', npm: '>=6'}
     hasBin: true
 
-  '@posthog/core@1.59.1':
-    resolution: {integrity: sha512-P39YgzQVDh6oz6wAzQXEnoHgTYpM7gifonmVKq1scAJco79h31XmmNVurRq9tTmmyIrr1uX8FHT0riCsyfV9AQ==}
+  '@posthog/core@1.61.0':
+    resolution: {integrity: sha512-FxOHbuxCZCFGb/46KdcBtilTX5ROeB4Gs8ZrWESzyNlCCxLw4/5xBVh8nfmPjbztuPvxRs5tOcpQ1kNnr2nlAA==}
 
   '@posthog/plugin-utils@2.0.1':
     resolution: {integrity: sha512-ZiQfUcgY65EjF2vkqL4Aau6sx0aqvSWoXaGSGu9Solnmv6e6VRjQbAU0SCKbxpJxcEsCJof9vmvnrFTQIEOUAQ==}
 
-  '@posthog/types@1.416.0':
-    resolution: {integrity: sha512-0/9+02s/0uDyrH4G/qUg1yyl6gXUg8Uuxw/PlDad3KLzo9FFS9zS/kAQaEshx/saVGupj1aAy/4EUBxWisBogw==}
+  '@posthog/types@1.417.0':
+    resolution: {integrity: sha512-r/+gvmiE6egR6kkuMhEjOOE3Sm1pR00iFPQNoZZ0YvnZSsqGk7hK2IvQzcqjSRufG5Jf0EwhDMr5YOGtmf2/8g==}
 
-  '@posthog/webpack-plugin@1.7.1':
-    resolution: {integrity: sha512-BMXDlpuilZR3XuTWPE3HcLEYkaStAgA3Ox3B88eCSVzFP2YY39+7sCbnjyOkeO5yY6I2TYMowSlQ49QaI8P+fA==}
+  '@posthog/webpack-plugin@1.8.0':
+    resolution: {integrity: sha512-vFQChMvbaT77kMcPyFYTVhN3JlicIIW4wwDLRgm4wPp+GT9gQjYqws9LkczaWO02OmVE08cPCfMyezJ2er+X8Q==}
     peerDependencies:
       webpack: ^5
 
@@ -405,8 +405,8 @@ packages:
     resolution: {integrity: sha512-HRDzbaKjC+AOWVXxAU/x54COGeIv9eb+6CkDSQoNTt4XyWoIJvuPsXizxu/Fr23EiekbtZwmh1IcIG/l/a10GQ==}
     engines: {node: '>=8'}
 
-  posthog-node@5.56.1:
-    resolution: {integrity: sha512-TlEeE5OHNbsIje/htLwvmxN45/X0FcMSsln15cHdQqybUGj9Ebd0yyziWec0Fi5YQwMHYCfJPcNdgol/s1lIFA==}
+  posthog-node@5.57.2:
+    resolution: {integrity: sha512-S03L9YC21EV0CIo7GW1lv/faTU0ENjO4uyFTuERxGIuDebjl3+UcRvJIq8RzAM2YJumpAlXPoDNyrxAvUZctfg==}
     engines: {node: ^20.20.0 || >=22.22.0}
     peerDependencies:
       '@opentelemetry/api': ^1.2.0
@@ -554,24 +554,24 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.6.0
 
-  '@posthog/cli@0.16.2':
+  '@posthog/cli@0.18.12':
     dependencies:
       detect-libc: 2.1.2
 
-  '@posthog/core@1.59.1':
+  '@posthog/core@1.61.0':
     dependencies:
-      '@posthog/types': 1.416.0
+      '@posthog/types': 1.417.0
 
   '@posthog/plugin-utils@2.0.1':
     dependencies:
       cross-spawn: 7.0.6
 
-  '@posthog/types@1.416.0': {}
+  '@posthog/types@1.417.0': {}
 
-  '@posthog/webpack-plugin@1.7.1(webpack@5.112.0)':
+  '@posthog/webpack-plugin@1.8.0(webpack@5.112.0)':
     dependencies:
-      '@posthog/cli': 0.16.2
-      '@posthog/core': 1.59.1
+      '@posthog/cli': 0.18.12
+      '@posthog/core': 1.61.0
       '@posthog/plugin-utils': 2.0.1
       webpack: 5.112.0(webpack-cli@6.0.1)
 
@@ -841,9 +841,9 @@ snapshots:
     dependencies:
       find-up: 4.1.0
 
-  posthog-node@5.56.1:
+  posthog-node@5.57.2:
     dependencies:
-      '@posthog/core': 1.59.1
+      '@posthog/core': 1.61.0
 
   rechoir@0.8.0:
     dependencies:

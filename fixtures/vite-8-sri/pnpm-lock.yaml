@@ -9,12 +9,12 @@ importers:
   .:
     dependencies:
       posthog-js:
-        specifier: 1.438.12
-        version: 1.438.12
+        specifier: 1.439.0
+        version: 1.439.0
     devDependencies:
       '@posthog/rollup-plugin':
-        specifier: 1.6.1
-        version: 1.6.1(rollup@4.64.7)
+        specifier: 1.6.2
+        version: 1.6.2(rollup@4.64.7)
       vite:
         specifier: 8.3.4
         version: 8.3.4
@@ -37,27 +37,27 @@ packages:
   '@oxc-project/types@0.154.0':
     resolution: {integrity: sha512-KYOUGQFlLWR+s4QMV2Q9ko38TZm7EdO87Qm7rvZLqk/webse/cDjtyxKhg/47l0byCbs/k46LT8qc4PKjAikzA==}
 
-  '@posthog/browser-common@0.9.5':
-    resolution: {integrity: sha512-oXnBgZvM8UQ84IcBLfGP0WSGd9rA0PCGR37H8Pw0NszJRwxwbJnFXIUih0pvI/ze2eGmzkIEC9i3SwC+bMAgjQ==}
+  '@posthog/browser-common@0.9.12':
+    resolution: {integrity: sha512-pKYLYgV0o4UK5PAQ3OTlZpQnKvcBpG+UOqWYa+W41Omec8TlI6FXzGMHdYMTmaymxii0vi9R4jLVi7JQSr4vnQ==}
 
-  '@posthog/cli@0.16.2':
-    resolution: {integrity: sha512-h8bpf9ffBUH/Z9IoyGV+wiI+vS8rIPorKT3eKQXuzuwawO0G7Qvy+hDd7HQ9YJjHByYZ77yPPQvrSs4WsqTUCg==}
+  '@posthog/cli@0.18.12':
+    resolution: {integrity: sha512-/eT9riWOkBb9uwsdOxQgW3fan/T3hwT8rvwZCzPl3DAgSBEhzpP59usD0fyFS++X2967E5AQe74nrBw1rywf6A==}
     engines: {node: '>=14.14', npm: '>=6'}
     hasBin: true
 
-  '@posthog/core@1.59.1':
-    resolution: {integrity: sha512-P39YgzQVDh6oz6wAzQXEnoHgTYpM7gifonmVKq1scAJco79h31XmmNVurRq9tTmmyIrr1uX8FHT0riCsyfV9AQ==}
+  '@posthog/core@1.61.0':
+    resolution: {integrity: sha512-FxOHbuxCZCFGb/46KdcBtilTX5ROeB4Gs8ZrWESzyNlCCxLw4/5xBVh8nfmPjbztuPvxRs5tOcpQ1kNnr2nlAA==}
 
   '@posthog/plugin-utils@2.0.1':
     resolution: {integrity: sha512-ZiQfUcgY65EjF2vkqL4Aau6sx0aqvSWoXaGSGu9Solnmv6e6VRjQbAU0SCKbxpJxcEsCJof9vmvnrFTQIEOUAQ==}
 
-  '@posthog/rollup-plugin@1.6.1':
-    resolution: {integrity: sha512-oVViFAZnIT3YVPahXzvvZtsPHISWikoYpqF+Hb4YMvufeVmTeljhFeg/hH5Y7b9UYhYbbv0JE7UQRfeSZZ6R+A==}
+  '@posthog/rollup-plugin@1.6.2':
+    resolution: {integrity: sha512-6aOAx34tP6M8H4+3y9ydVeM/bK06ak+UUJgEA7pQCygkdHOsPcVFI6Tnd+rV4ZWQEMQDj6ZHZy9K5X7IIWj6Tg==}
     peerDependencies:
       rollup: '>= 4.0.0'
 
-  '@posthog/types@1.416.0':
-    resolution: {integrity: sha512-0/9+02s/0uDyrH4G/qUg1yyl6gXUg8Uuxw/PlDad3KLzo9FFS9zS/kAQaEshx/saVGupj1aAy/4EUBxWisBogw==}
+  '@posthog/types@1.417.0':
+    resolution: {integrity: sha512-r/+gvmiE6egR6kkuMhEjOOE3Sm1pR00iFPQNoZZ0YvnZSsqGk7hK2IvQzcqjSRufG5Jf0EwhDMr5YOGtmf2/8g==}
 
   '@rolldown/binding-android-arm-eabi@1.2.14':
     resolution: {integrity: sha512-aWR+XKH9+rW7m5fWq/5360J3mHycrx/o6xZM2DQFdJnTMdyP7/WzxPjhtLbVWdKo2y612/4U1bWqb3HQhiF7vg==}
@@ -433,8 +433,8 @@ packages:
     resolution: {integrity: sha512-zkd+e9S1AQHhmaBKye9zlFHWjOwVgqXl1q3ECYy8561K7qxR2cREf/STLskulBFd78k6AOFeA+ff1TtEzk9bAA==}
     engines: {node: ^10 || ^12 || >=14}
 
-  posthog-js@1.438.12:
-    resolution: {integrity: sha512-hjhvrtqbk6pFlbtNEGk0FrWKKFdeXe/WWA/LppN0f+uDoHKR9/SZJOxUHSVCGYbGTJvNRoDjjQvZuTcq4oKSlg==}
+  posthog-js@1.439.0:
+    resolution: {integrity: sha512-hsLOuGv0BuixMf5pblWBdw3qjVvLYSNvdqRA0Di94crGtlcfW4mTQEupl9LQcKSNH0iOnsOlBZ8aB5CMKAGh3A==}
     peerDependencies:
       '@types/react': '>=16.8.0'
       react: '>=16.8.0'
@@ -550,31 +550,34 @@ snapshots:
 
   '@oxc-project/types@0.154.0': {}
 
-  '@posthog/browser-common@0.9.5':
+  '@posthog/browser-common@0.9.12':
     dependencies:
-      '@posthog/core': 1.59.1
-      '@posthog/types': 1.416.0
+      '@posthog/core': 1.61.0
+      '@posthog/types': 1.417.0
+      preact: 10.29.8
+    transitivePeerDependencies:
+      - preact-render-to-string
 
-  '@posthog/cli@0.16.2':
+  '@posthog/cli@0.18.12':
     dependencies:
       detect-libc: 2.1.2
 
-  '@posthog/core@1.59.1':
+  '@posthog/core@1.61.0':
     dependencies:
-      '@posthog/types': 1.416.0
+      '@posthog/types': 1.417.0
 
   '@posthog/plugin-utils@2.0.1':
     dependencies:
       cross-spawn: 7.0.6
 
-  '@posthog/rollup-plugin@1.6.1(rollup@4.64.7)':
+  '@posthog/rollup-plugin@1.6.2(rollup@4.64.7)':
     dependencies:
-      '@posthog/cli': 0.16.2
+      '@posthog/cli': 0.18.12
       '@posthog/plugin-utils': 2.0.1
       magic-string: 0.30.21
       rollup: 4.64.7
 
-  '@posthog/types@1.416.0': {}
+  '@posthog/types@1.417.0': {}
 
   '@rolldown/binding-android-arm-eabi@1.2.14':
     optional: true
@@ -795,11 +798,11 @@ snapshots:
       picocolors: 1.1.1
       source-map-js: 1.2.2
 
-  posthog-js@1.438.12:
+  posthog-js@1.439.0:
     dependencies:
-      '@posthog/browser-common': 0.9.5
-      '@posthog/core': 1.59.1
-      '@posthog/types': 1.416.0
+      '@posthog/browser-common': 0.9.12
+      '@posthog/core': 1.61.0
+      '@posthog/types': 1.417.0
       core-js: 3.50.0
       dompurify: 3.4.17
       fflate: 0.4.9

@@ -15,6 +15,10 @@ node harness/run.mjs --cli-binary /path/to/posthog-cli --tags next,browser --cas
 node harness/run.mjs --cli 0.18.11 --fixtures next-15,next-16-webpack --cases next/baseline-event --list
 ```
 
+Fixture lockfiles pin exact versions for reproducible builds. pnpm retains a seven-day release-age
+check for third-party dependencies but exempts PostHog packages, so newly published integrations
+can be tested immediately. Refresh the fixture pins and lockfiles to pick up new releases.
+
 The Docker image contains pinned fixture dependencies and CLIs. No network access is required at
 run time; use `--network none` and pin the image digest in CI. With no filters, the full conformance
 matrix runs. `--fixtures` selects names; `--tags` selects any matching tag (OR); both together

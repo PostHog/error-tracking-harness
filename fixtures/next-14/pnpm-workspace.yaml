@@ -1,4 +1,9 @@
 minimumReleaseAge: 10080
+# Test newly published PostHog integrations without waiting for the third-party cooldown.
+minimumReleaseAgeExclude:
+    - "@posthog/*"
+    - posthog-js
+    - posthog-node
 nodeLinker: hoisted
 # The CLI package downloads its binary in postinstall. core-js only prints a banner, but pnpm 11
 # still refuses the install on Next 14 when it is denied, so the strict check is off here.
