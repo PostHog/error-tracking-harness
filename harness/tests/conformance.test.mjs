@@ -58,6 +58,76 @@ test('missing, stale or mismatched successive-build evidence fails', () => {
     assert.match(judge(noReplay, kase).failures.join('\n'), /no previous-release asset/)
 })
 
+for (const name of ['next/smoke', 'next/baseline-event']) {
+    test(`${name} accepts deleted Turbopack maps with references, retaining other conformance checks`, () => {
+        const [nextCase] = loadCases(path.join(root, 'harness/cases'), name)
+        const makeEvidence = () => {
+            const result = evidence()
+            result.plugin.name = '@posthog/nextjs-config'
+            result.fixture.bundler = 'turbopack'
+            result.releases = result.releases.slice(0, nextCase.releases)
+            for (const release of result.releases) {
+                for (const chunk of release.chunks) chunk.sourceMappingURL = true
+            }
+            return result
+        }
+        const valid = makeEvidence()
+        assert.deepEqual(judge(valid, nextCase), { ok: true, failures: [] })
+        for (const chunk of valid.releases[0].chunks) chunk.sourceMappingURL = false
+        assert.equal(judge(valid, nextCase).ok, true)
+
+        // Orphan and differently named maps must fail too, not only <judged-chunk>.map.
+        for (const map of ['first-entry.js.map', 'orphan.map', 'skipped-wrapper.js.map']) {
+            const retained = makeEvidence()
+            retained.releases[0].mapsLeft = [map]
+            retained.releases[0].chunks.push({ file: 'skipped-wrapper.js', cliSkipped: 'empty map' })
+            assert.match(judge(retained, nextCase).failures.join('\n'), /maps remain.*expected deleted-files/)
+        }
+        const noRelease = makeEvidence()
+        noRelease.releases[0].events[0].releaseId = null
+        assert.match(judge(noRelease, nextCase).failures.join('\n'), /\$release_id null/)
+        const noSymbols = makeEvidence()
+        noSymbols.releases[0].symbolSets = []
+        assert.match(judge(noSymbols, nextCase).failures.join('\n'), /no finished symbol set/)
+        const unresolved = makeEvidence()
+        unresolved.releases[0].events[0].crash.resolved = null
+        assert.match(judge(unresolved, nextCase).failures.join('\n'), /does not resolve/)
+        const rewritten = makeEvidence()
+        rewritten.releases[0].symbolSets[0].storedMatchesDisk = 'differs'
+        assert.match(judge(rewritten, nextCase).failures.join('\n'), /no longer lines up with disk/)
+
+        const webpack = makeEvidence()
+        webpack.fixture.bundler = 'webpack'
+        assert.match(judge(webpack, nextCase).failures.join('\n'), /maps dangling.*expected deleted/)
+        const otherPlugin = makeEvidence()
+        otherPlugin.plugin.name = '@posthog/rollup-plugin'
+        assert.match(judge(otherPlugin, nextCase).failures.join('\n'), /maps dangling.*expected deleted/)
+    })
+}
+
+test('deleted-files map groups do not exempt retained or unmatched maps', () => {
+    const grouped = { releases: 2, expect: { mapsBy: { 'static/**': 'deleted-files' } } }
+    validateCase(grouped, 'grouped')
+    const value = evidence()
+    value.releases[0].mapsLeft = ['static/orphan.map']
+    assert.match(judge(value, grouped).failures.join('\n'), /maps under static\/\*\* remain/)
+    value.releases[0].mapsLeft = []
+    value.releases[0].chunks[0].sourceMappingURL = true
+    assert.match(judge(value, grouped).failures.join('\n'), /maps dangling.*expected deleted/)
+})
+
+test('keep-maps still requires visible maps for Turbopack', () => {
+    const [keepCase] = loadCases(path.join(root, 'harness/cases'), 'next/keep-maps')
+    const value = evidence()
+    value.plugin.name = '@posthog/nextjs-config'
+    value.fixture.bundler = 'turbopack'
+    value.releases = value.releases.slice(0, 1)
+    for (const chunk of value.releases[0].chunks) chunk.sourceMappingURL = true
+    assert.match(judge(value, keepCase).failures.join('\n'), /expected kept-visible/)
+    value.releases[0].mapsLeft = value.releases[0].chunks.map((chunk) => chunk.file + '.map')
+    assert.equal(judge(value, keepCase).ok, true)
+})
+
 test('historical defect expectations and plugin floors are rejected', () => {
     assert.throws(() => validateCase({ expect: { eventsBy: { entry: { foo: 'no-release' } } } }, 'bad'), /invalid expect.eventsBy/)
     assert.throws(() => validateCase({ minPlugin: { foo: '1.0.0' } }, 'bad'), /unknown field minPlugin/)

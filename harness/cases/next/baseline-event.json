@@ -2,5 +2,6 @@
     "mode": "next",
     "description": "Two successive Next.js releases: server and browser exceptions must resolve and carry the correct release, even with older immutable assets replayed. Source maps must be cleaned up on both bundlers.",
     "options": { "sourcemaps": { "releaseMode": "event" } },
+    "expect": { "maps": { "@posthog/nextjs-config:turbopack": "deleted-files" } },
     "releases": 2
 }

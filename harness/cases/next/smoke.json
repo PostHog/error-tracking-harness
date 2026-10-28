@@ -6,5 +6,6 @@
             "releaseMode": "event"
         }
     },
+    "expect": { "maps": { "@posthog/nextjs-config:turbopack": "deleted-files" } },
     "releases": 1
 }

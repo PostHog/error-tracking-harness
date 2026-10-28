@@ -6,7 +6,7 @@ const EXPECT = 'build chunkIds cli events eventsBy maps mapsBy metadataFree rele
 // Case applicability is independent of fixture selection tags and execution drivers.
 const APPLICABILITY = /^[a-z]+(?:-[a-z0-9]+)*$/
 const validApplicability = (value) => typeof value === 'string' && APPLICABILITY.test(value)
-const MAPS = ['deleted', 'kept-hidden', 'kept-visible']
+const MAPS = ['deleted', 'deleted-files', 'kept-hidden', 'kept-visible']
 const EXPECT_VALUES = {
     build: ['green'], cli: ['green'], chunkIds: ['all', 'any'],
     maps: MAPS, symbols: ['all'], events: ['resolved'],
