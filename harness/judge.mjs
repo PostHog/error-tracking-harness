@@ -3,7 +3,8 @@
 //
 // `expect` vocabulary (each value may be a string, or an object keyed by plugin name):
 //   chunkIds:  all | any                          default all (any: native bundler debug IDs)
-//   maps:      deleted | kept-hidden | kept-visible  default deleted
+//   maps:      deleted | deleted-files | kept-hidden | kept-visible  default deleted
+//              deleted-files requires no maps, but permits references in unchanged JavaScript
 //   mapsBy:    { '<glob>': <maps value> }        the same, judged per group of files
 //   transport: PUT | POST                          how every symbol set reached the object store
 //   release:   { name, version }                   the release row the CLI created; version 'commit'
@@ -81,15 +82,23 @@ export function judge(evidence, kase) {
         // `mapsBy` overrides the default only for files covered by its globs. Unmatched files
         // must still satisfy the default, or an added chunk could silently escape cleanup checks.
         const groups = Object.entries(expect.mapsBy ?? {})
-        const checkMaps = (files, want, label) => {
+        const checkMaps = (files, maps, want, label) => {
+            // Native debug-ID uploads preserve hashed JavaScript, including its map references.
+            // Check every map in the group, even maps without a judged sibling chunk.
+            if (want === 'deleted-files') {
+                if (maps.length) failures.push(`${tag}: ${label} remain (${maps.slice(0, 4).join(', ')}), expected deleted-files`)
+                return
+            }
             if (!files.length) return
-            const { state, left } = classifyMaps(files, release.mapsLeft)
+            const { state, left } = classifyMaps(files, maps)
             if (state !== want) failures.push(`${tag}: ${label} ${state} (${left.slice(0, 4).join(', ') || 'none'}), expected ${want}`)
         }
         for (const [glob, want] of groups) {
-            checkMaps(judged.filter((chunk) => matchesGlob(chunk.file, glob)), want, `maps under ${glob}`)
+            checkMaps(judged.filter((chunk) => matchesGlob(chunk.file, glob)),
+                release.mapsLeft.filter((map) => matchesGlob(map.replace(/\.map$/, ''), glob)), want, `maps under ${glob}`)
         }
-        checkMaps(judged.filter((chunk) => !groups.some(([glob]) => matchesGlob(chunk.file, glob))), expected.maps, 'maps')
+        checkMaps(judged.filter((chunk) => !groups.some(([glob]) => matchesGlob(chunk.file, glob))),
+            release.mapsLeft.filter((map) => !groups.some(([glob]) => matchesGlob(map.replace(/\.map$/, ''), glob))), expected.maps, 'maps')
 
         if (release.chunks.length < 2) failures.push(`${tag}: expected an entry and a lazy chunk, found ${release.chunks.map((chunk) => chunk.file)}`)
         for (const chunk of judged) {

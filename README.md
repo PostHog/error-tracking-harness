@@ -158,7 +158,10 @@ change, and re-resolve the first release's saved exceptions against the final up
 `volatileChunks` may exclude only inherently release-dependent generated assets; excluding all
 checked chunks fails. Map cleanup, transport and release metadata have case-specific assertions,
 but no case accepts a missing release, an unresolved error, a plugin-age floor or an unagreed
-fault outcome. Recorded defects should be fixed in the integration, not turned into expected
+fault outcome. The Next.js Turbopack smoke and successive-release cases use `maps: deleted-files`:
+all emitted source maps must be deleted, while `sourceMappingURL` comments may remain because
+native debug-ID uploads preserve hashed JavaScript. The default `maps: deleted` also requires
+removing map comments; `kept-hidden` and `kept-visible` cover retained maps. Recorded defects should be fixed in the integration, not turned into expected
 passes.
 
 A cell copies the fixture to a temporary workspace, replaces only named override packages, runs
